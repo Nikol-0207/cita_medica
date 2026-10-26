@@ -109,6 +109,8 @@
                                         </td>
                                         <?php if ($puedeGestionar): ?>
                                         <td>
+                                            <a href="index.php?route=medico_ver&id_medico=<?= (int)$m['id_medico'] ?>"
+                                               class="btn-editar" style="margin-right:6px">Ver información</a>
                                             <form action="index.php?route=medicos_estado" method="POST" style="display:inline"
                                                   onsubmit="return confirm('<?= $m['estado'] === 'Activo'
                                                       ? '¿Desactivar al médico? Sus horarios dejarán de ofrecerse al programar citas y desaparecerán del calendario; sus citas existentes se conservan.'

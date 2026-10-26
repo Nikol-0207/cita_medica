@@ -93,6 +93,7 @@ $hayFiltros = $hayFiltros ?? false;
                                     <th>Próxima cita</th>
                                     <?php endif; ?>
                                     <th>Estado</th>
+                                    <th>Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -113,6 +114,10 @@ $hayFiltros = $hayFiltros ?? false;
                                             <span class="badge-estado <?= $p['estado'] === 'Activo' ? 'badge-activo' : 'badge-inactivo' ?>">
                                                 <?= htmlspecialchars($p['estado']) ?>
                                             </span>
+                                        </td>
+                                        <td>
+                                            <a href="index.php?route=paciente_ver&id_paciente=<?= (int)$p['id_paciente'] ?>"
+                                               class="btn-editar">Ver información</a>
                                         </td>
                                     </tr>
                                 <?php endforeach; ?>

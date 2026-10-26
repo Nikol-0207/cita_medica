@@ -36,6 +36,115 @@ class RecepcionistaController {
     require_once __DIR__ . '/../views/admin/recepcionistas/listar.php';
 }
 
+    // ----------------------------------------------------------------
+    // VER INFORMACIÓN DEL RECEPCIONISTA (solo administrador)
+    // ----------------------------------------------------------------
+    public function ver() {
+        Permisos::exigir('recepcionistas.gestionar');
+
+        $id             = ctype_digit($_GET['id_recepcionista'] ?? '') ? (int)$_GET['id_recepcionista'] : 0;
+        $recepcionista  = $id > 0 ? $this->model->obtenerDetalle($id) : null;
+
+        if (!$recepcionista) {
+            $_SESSION['mensaje_error'] = "El recepcionista solicitado no existe.";
+            header("Location: index.php?route=recepcionistas");
+            exit;
+        }
+
+        $old = $_SESSION['old'] ?? null;
+        unset($_SESSION['old']);
+
+        $mensajeExito = $_SESSION['mensaje_exito'] ?? null;
+        $mensajeError = $_SESSION['mensaje_error'] ?? null;
+        unset($_SESSION['mensaje_exito'], $_SESSION['mensaje_error']);
+
+        $colores = (new Configuracion())->getColoresPersonalizados();
+        $activo  = 'recepcionistas';
+
+        require_once __DIR__ . '/../views/admin/recepcionistas/detalle.php';
+    }
+
+    // ----------------------------------------------------------------
+    // GUARDAR CAMBIOS DE LA FICHA DEL RECEPCIONISTA
+    // ----------------------------------------------------------------
+    public function actualizar() {
+        Permisos::exigir('recepcionistas.gestionar');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header("Location: index.php?route=recepcionistas");
+            exit;
+        }
+
+        $id            = ctype_digit($_POST['id_recepcionista'] ?? '') ? (int)$_POST['id_recepcionista'] : 0;
+        $recepcionista = $id > 0 ? $this->model->obtenerDetalle($id) : null;
+        if (!$recepcionista) {
+            $_SESSION['mensaje_error'] = "El recepcionista solicitado no existe.";
+            header("Location: index.php?route=recepcionistas");
+            exit;
+        }
+
+        $d = [
+            'nombres'          => trim($_POST['nombres'] ?? ''),
+            'apellidos'        => trim($_POST['apellidos'] ?? ''),
+            'ci'               => trim($_POST['ci'] ?? ''),
+            'celular'          => trim($_POST['celular'] ?? ''),
+            'fecha_nacimiento' => trim($_POST['fecha_nacimiento'] ?? ''),
+            'direccion'        => trim($_POST['direccion'] ?? ''),
+        ];
+
+        $errores = [];
+
+        foreach (['nombres' => 'Nombres', 'apellidos' => 'Apellidos',
+                  'ci' => 'CI', 'celular' => 'Celular',
+                  'fecha_nacimiento' => 'Fecha de nacimiento',
+                  'direccion' => 'Dirección'] as $campo => $etiqueta) {
+            if ($d[$campo] === '') {
+                $errores[] = "El campo $etiqueta es obligatorio.";
+            }
+        }
+
+        if ($d['ci'] !== '' && !preg_match('/^[0-9A-Za-z-]{5,20}$/', $d['ci'])) {
+            $errores[] = "El CI no es válido.";
+        }
+        if ($d['celular'] !== '' && !preg_match('/^\+?[0-9]{7,15}$/', $d['celular'])) {
+            $errores[] = "El celular no es válido (solo números, 7 a 15 dígitos).";
+        }
+
+        if ($d['fecha_nacimiento'] !== '') {
+            $fecha = DateTime::createFromFormat('Y-m-d', $d['fecha_nacimiento']);
+            if (!$fecha || $fecha->format('Y-m-d') !== $d['fecha_nacimiento']) {
+                $errores[] = "La fecha de nacimiento no es válida.";
+            } elseif ($fecha > new DateTime()) {
+                $errores[] = "La fecha de nacimiento no puede ser futura.";
+            } elseif ($fecha->diff(new DateTime())->y < 18) {
+                $errores[] = "El recepcionista debe ser mayor de 18 años.";
+            }
+        }
+
+        if (!$errores && $this->model->existeCiDeOtroId($d['ci'], $id)) {
+            $errores[] = "Ya existe otro recepcionista con ese CI.";
+        }
+
+        if ($errores) {
+            $_SESSION['mensaje_error'] = implode(' ', $errores);
+            $_SESSION['old'] = $d;
+            header("Location: index.php?route=recepcionista_ver&id_recepcionista=" . $id);
+            exit;
+        }
+
+        try {
+            $this->model->actualizarPorId($id, $d);
+            $_SESSION['mensaje_exito'] = "La información del recepcionista se actualizó correctamente.";
+            header("Location: index.php?route=recepcionista_ver&id_recepcionista=" . $id);
+        } catch (Throwable $e) {
+            error_log($e->getMessage());
+            $_SESSION['mensaje_error'] = "No se pudo actualizar al recepcionista: " . $e->getMessage();
+            $_SESSION['old'] = $d;
+            header("Location: index.php?route=recepcionista_ver&id_recepcionista=" . $id);
+        }
+        exit;
+    }
+
     public function guardar() {
     Permisos::exigir('recepcionistas.gestionar');
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {

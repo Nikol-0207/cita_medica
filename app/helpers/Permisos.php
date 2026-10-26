@@ -4,8 +4,12 @@ require_once __DIR__ . '/../../config/Database.php';
 class Permisos {
 
     /** El administrador siempre tiene todo, así un permiso nuevo nunca lo deja afuera. */
-    private static function esAdmin() {
+    public static function esAdministrador() {
         return ($_SESSION['user_role'] ?? '') === 'Administrador';
+    }
+
+    private static function esAdmin() {
+        return self::esAdministrador();
     }
 
     /** Rol Médico: solo ve su agenda y los pacientes que tienen citas con él. */

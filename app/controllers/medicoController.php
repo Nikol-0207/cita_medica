@@ -29,6 +29,117 @@ class MedicoController {
         require_once __DIR__ . '/../views/medicos/listar.php';
     }
 
+    // ----------------------------------------------------------------
+    // VER INFORMACIÓN DEL MÉDICO (solo administrador)
+    // ----------------------------------------------------------------
+    public function ver() {
+        Permisos::exigir('medicos.gestionar');
+
+        $id     = ctype_digit($_GET['id_medico'] ?? '') ? (int)$_GET['id_medico'] : 0;
+        $medico = $id > 0 ? $this->model->obtenerDetalle($id) : null;
+
+        if (!$medico) {
+            $_SESSION['mensaje_error'] = "El médico solicitado no existe.";
+            header("Location: index.php?route=medicos");
+            exit;
+        }
+
+        $especialidades = $this->model->especialidadesParaEditar($id);
+        $asignadas      = array_map('intval', array_column($this->model->especialidadesDe($id), 'id_especialidad'));
+        $old            = $_SESSION['old'] ?? null;
+        unset($_SESSION['old']);
+
+        $mensajeExito = $_SESSION['mensaje_exito'] ?? null;
+        $mensajeError = $_SESSION['mensaje_error'] ?? null;
+        unset($_SESSION['mensaje_exito'], $_SESSION['mensaje_error']);
+
+        $colores = (new Configuracion())->getColoresPersonalizados();
+        $activo  = 'medicos';
+
+        require_once __DIR__ . '/../views/medicos/detalle.php';
+    }
+
+    // ----------------------------------------------------------------
+    // GUARDAR CAMBIOS DE LA FICHA DEL MÉDICO
+    // ----------------------------------------------------------------
+    public function actualizar() {
+        Permisos::exigir('medicos.gestionar');
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header("Location: index.php?route=medicos");
+            exit;
+        }
+
+        $id     = ctype_digit($_POST['id_medico'] ?? '') ? (int)$_POST['id_medico'] : 0;
+        $medico = $id > 0 ? $this->model->obtenerDetalle($id) : null;
+        if (!$medico) {
+            $_SESSION['mensaje_error'] = "El médico solicitado no existe.";
+            header("Location: index.php?route=medicos");
+            exit;
+        }
+
+        $d = [
+            'nombres'              => trim($_POST['nombres'] ?? ''),
+            'apellidos'            => trim($_POST['apellidos'] ?? ''),
+            'registro_profesional' => trim($_POST['registro_profesional'] ?? ''),
+            'telefono'             => trim($_POST['telefono'] ?? ''),
+            'correo'               => trim($_POST['correo'] ?? ''),
+        ];
+
+        $seleccion = isset($_POST['especialidades']) && is_array($_POST['especialidades'])
+            ? array_values(array_unique(array_map('intval', $_POST['especialidades'])))
+            : [];
+        $d['especialidades'] = $seleccion;
+
+        $errores = [];
+
+        foreach (['nombres' => 'Nombres', 'apellidos' => 'Apellidos',
+                  'registro_profesional' => 'Registro profesional'] as $campo => $etiqueta) {
+            if ($d[$campo] === '') {
+                $errores[] = "El campo $etiqueta es obligatorio.";
+            }
+        }
+        if (!preg_match('/^\+?[0-9]{7,15}$/', $d['telefono'])) {
+            $errores[] = "El teléfono no es válido (solo números, 7 a 15 dígitos).";
+        }
+        if (!filter_var($d['correo'], FILTER_VALIDATE_EMAIL)) {
+            $errores[] = "El correo electrónico no es válido.";
+        }
+        if (!$seleccion) {
+            $errores[] = "Selecciona al menos una especialidad.";
+        } else {
+            $validas = array_map('intval', array_column(
+                $this->model->especialidadesParaEditar($id),
+                'id_especialidad'
+            ));
+            if (array_diff($seleccion, $validas)) {
+                $errores[] = "Alguna especialidad seleccionada no es válida.";
+            }
+        }
+        if (!$errores && $this->model->existeRegistroDeOtro($d['registro_profesional'], $id)) {
+            $errores[] = "Ya existe otro médico con ese registro profesional.";
+        }
+
+        if ($errores) {
+            $_SESSION['mensaje_error'] = implode(' ', $errores);
+            $_SESSION['old'] = $d;
+            header("Location: index.php?route=medico_ver&id_medico=" . $id);
+            exit;
+        }
+
+        try {
+            $this->model->actualizar($id, $d, $seleccion);
+            $_SESSION['mensaje_exito'] = "La información del médico se actualizó correctamente.";
+            header("Location: index.php?route=medico_ver&id_medico=" . $id);
+        } catch (Throwable $e) {
+            error_log($e->getMessage());
+            $_SESSION['mensaje_error'] = "No se pudo actualizar al médico: " . $e->getMessage();
+            $_SESSION['old'] = $d;
+            header("Location: index.php?route=medico_ver&id_medico=" . $id);
+        }
+        exit;
+    }
+
     /**
      * Activar / desactivar un médico (solo admin: permiso medicos.gestionar).
      * Desactivarlo oculta sus horarios de la reserva y del calendario;

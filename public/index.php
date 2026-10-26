@@ -113,6 +113,14 @@ switch ($route) {
         require_once ROOT_PATH . '/app/controllers/RecepcionistaController.php';
         (new RecepcionistaController())->guardar();
         break;
+    case 'recepcionista_ver':
+        require_once ROOT_PATH . '/app/controllers/RecepcionistaController.php';
+        (new RecepcionistaController())->ver();
+        break;
+    case 'recepcionista_actualizar':
+        require_once ROOT_PATH . '/app/controllers/RecepcionistaController.php';
+        (new RecepcionistaController())->actualizar();
+        break;
         case 'pacientes':
         require_once ROOT_PATH . '/app/controllers/pacienteController.php';
         (new PacienteController())->listar();
@@ -125,6 +133,14 @@ switch ($route) {
         require_once ROOT_PATH . '/app/controllers/pacienteController.php';
         (new PacienteController())->guardar();
         break;
+    case 'paciente_ver':
+        require_once ROOT_PATH . '/app/controllers/pacienteController.php';
+        (new PacienteController())->ver();
+        break;
+    case 'paciente_actualizar':
+        require_once ROOT_PATH . '/app/controllers/pacienteController.php';
+        (new PacienteController())->actualizar();
+        break;
         case 'medicos':
         require_once ROOT_PATH . '/app/controllers/medicoController.php';
         (new MedicoController())->listar();
@@ -136,6 +152,14 @@ switch ($route) {
     case 'medicos_guardar':
         require_once ROOT_PATH . '/app/controllers/medicoController.php';
         (new MedicoController())->guardar();
+        break;
+    case 'medico_ver':
+        require_once ROOT_PATH . '/app/controllers/medicoController.php';
+        (new MedicoController())->ver();
+        break;
+    case 'medico_actualizar':
+        require_once ROOT_PATH . '/app/controllers/medicoController.php';
+        (new MedicoController())->actualizar();
         break;
     case 'medicos_estado':
         require_once ROOT_PATH . '/app/controllers/medicoController.php';

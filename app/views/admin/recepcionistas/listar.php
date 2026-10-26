@@ -56,6 +56,7 @@
                                     <th>Email</th>
                                     <th>Estado</th>
                                     <th>Registrado</th>
+                                    <th>Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -72,6 +73,10 @@
                                             </span>
                                         </td>
                                         <td><?= htmlspecialchars(date('d/m/Y', strtotime($r['fecha_registro']))) ?></td>
+                                        <td>
+                                            <a href="index.php?route=recepcionista_ver&id_recepcionista=<?= (int)$r['id_recepcionista'] ?>"
+                                               class="btn-editar">Ver información</a>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>

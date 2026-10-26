@@ -63,6 +63,109 @@ class Medico {
         return $stmt->rowCount();
     }
 
+    /** Ficha completa para la pantalla "Ver información". */
+    public function obtenerDetalle($idMedico) {
+        $stmt = $this->db->prepare(
+            "SELECT m.id_medico, m.id_cuenta_usuario, m.codigo, m.nombres, m.apellidos,
+                    m.registro_profesional, m.telefono, m.correo, m.estado, m.fecha_registro,
+                    u.nombre AS usuario, u.correo AS correo_cuenta
+             FROM medico m
+             LEFT JOIN cuenta_usuario u ON u.id_cuenta_usuario = m.id_cuenta_usuario
+             WHERE m.id_medico = :id
+             LIMIT 1"
+        );
+        $stmt->execute([':id' => (int)$idMedico]);
+        $fila = $stmt->fetch();
+        return $fila ?: null;
+    }
+
+    /** Especialidades activas asignadas al médico. */
+    public function especialidadesDe($idMedico) {
+        $stmt = $this->db->prepare(
+            "SELECT e.id_especialidad, e.nombre
+             FROM medico_especialidad me
+             JOIN especialidades e ON e.id_especialidad = me.id_especialidad
+             WHERE me.id_medico = :id AND me.estado = 'Activo'
+             ORDER BY e.nombre"
+        );
+        $stmt->execute([':id' => (int)$idMedico]);
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Opciones para el formulario: especialidades activas y también las que el
+     * médico ya tiene asignadas aunque estén inactivas, para no perderlas.
+     */
+    public function especialidadesParaEditar($idMedico) {
+        $stmt = $this->db->prepare(
+            "SELECT e.id_especialidad, e.nombre, e.estado
+             FROM especialidades e
+             WHERE e.estado = 'Activo'
+                OR EXISTS (SELECT 1 FROM medico_especialidad me
+                            WHERE me.id_medico = :id
+                              AND me.id_especialidad = e.id_especialidad
+                              AND me.estado = 'Activo')
+             ORDER BY e.nombre"
+        );
+        $stmt->execute([':id' => (int)$idMedico]);
+        return $stmt->fetchAll();
+    }
+
+    /** ¿Otro médico ya usa ese registro profesional? (excluye al que se edita). */
+    public function existeRegistroDeOtro($registro, $idMedico) {
+        $stmt = $this->db->prepare(
+            "SELECT 1 FROM medico
+             WHERE LOWER(registro_profesional) = LOWER(:r)
+               AND id_medico IS DISTINCT FROM :id
+             LIMIT 1"
+        );
+        $stmt->execute([':r' => $registro, ':id' => (int)$idMedico]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    /** Actualiza los datos de la ficha y reemplaza sus especialidades. */
+    public function actualizar($idMedico, array $d, array $especialidades) {
+        $this->db->beginTransaction();
+        try {
+            $this->db->prepare(
+                "UPDATE medico
+                    SET nombres = :nombres,
+                        apellidos = :apellidos,
+                        registro_profesional = :registro,
+                        telefono = :telefono,
+                        correo = :correo
+                  WHERE id_medico = :id"
+            )->execute([
+                ':nombres'   => $d['nombres'],
+                ':apellidos' => $d['apellidos'],
+                ':registro'  => $d['registro_profesional'],
+                ':telefono'  => $d['telefono'],
+                ':correo'    => $d['correo'],
+                ':id'        => (int)$idMedico,
+            ]);
+
+            $this->db->prepare("DELETE FROM medico_especialidad WHERE id_medico = :id")
+                     ->execute([':id' => (int)$idMedico]);
+
+            if ($especialidades) {
+                $stmt = $this->db->prepare(
+                    "INSERT INTO medico_especialidad (id_medico, id_especialidad, fecha_asignacion, estado)
+                     VALUES (:medico, :esp, NOW(), 'Activo')"
+                );
+                foreach ($especialidades as $idEsp) {
+                    $stmt->execute([':medico' => (int)$idMedico, ':esp' => (int)$idEsp]);
+                }
+            }
+
+            $this->db->commit();
+        } catch (Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+    }
+
     public function existeCorreoCuenta($correo) {
         $stmt = $this->db->prepare("SELECT 1 FROM cuenta_usuario WHERE LOWER(correo) = LOWER(:c) LIMIT 1");
         $stmt->execute([':c' => $correo]);

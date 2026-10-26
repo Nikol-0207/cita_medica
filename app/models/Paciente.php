@@ -78,6 +78,159 @@ class Paciente {
         return $stmt->rowCount();
     }
 
+    /**
+     * Ficha completa para la pantalla "Ver información": datos personales,
+     * información médica y datos de la cuenta (si tiene una vinculada).
+     */
+    public function obtenerDetalle($idPaciente) {
+        $stmt = $this->db->prepare(
+            "SELECT p.id_paciente, p.id_cuenta_usuario, p.codigo, p.nombres, p.apellidos,
+                    p.ci, p.fecha_nacimiento, p.sexo, p.telefono, p.correo, p.direccion,
+                    p.nro_seguro, p.observaciones, p.estado, p.fecha_registro,
+                    u.nombre AS usuario, u.correo AS correo_cuenta,
+                    (SELECT im.tipo_sangre FROM informacion_medica im
+                      WHERE im.id_paciente = p.id_paciente
+                      ORDER BY im.fecha_actualizacion DESC NULLS LAST LIMIT 1) AS tipo_sangre,
+                    (SELECT im.alergias FROM informacion_medica im
+                      WHERE im.id_paciente = p.id_paciente
+                      ORDER BY im.fecha_actualizacion DESC NULLS LAST LIMIT 1) AS alergias,
+                    (SELECT MAX(im.fecha_actualizacion) FROM informacion_medica im
+                      WHERE im.id_paciente = p.id_paciente) AS fecha_actualizacion_medica
+             FROM paciente p
+             LEFT JOIN cuenta_usuario u ON u.id_cuenta_usuario = p.id_cuenta_usuario
+             WHERE p.id_paciente = :id
+             LIMIT 1"
+        );
+        $stmt->execute([':id' => (int)$idPaciente]);
+        $fila = $stmt->fetch();
+        return $fila ?: null;
+    }
+
+    /** Contactos de emergencia registrados para el paciente. */
+    public function contactosEmergencia($idPaciente) {
+        $stmt = $this->db->prepare(
+            "SELECT nombre, parentesco, telefono
+             FROM contacto_emergencia
+             WHERE id_paciente = :id"
+        );
+        $stmt->execute([':id' => (int)$idPaciente]);
+        return $stmt->fetchAll();
+    }
+
+    /** ¿El paciente tiene alguna cita (pasada o futura) con ese médico? */
+    public function tieneCitaConMedico($idPaciente, $idMedico) {
+        if ($idMedico <= 0) {
+            return false;
+        }
+        $stmt = $this->db->prepare(
+            "SELECT 1 FROM cita
+             WHERE id_paciente = :pac AND id_medico = :med
+             LIMIT 1"
+        );
+        $stmt->execute([':pac' => (int)$idPaciente, ':med' => (int)$idMedico]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    /** ¿Otro paciente ya usa ese CI? (excluye la ficha que se está editando). */
+    public function existeCiDeOtroPaciente($ci, $idPaciente) {
+        $stmt = $this->db->prepare(
+            "SELECT 1 FROM paciente
+             WHERE ci = :ci
+               AND id_paciente IS DISTINCT FROM :id
+             LIMIT 1"
+        );
+        $stmt->execute([':ci' => $ci, ':id' => (int)$idPaciente]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    /**
+     * Actualiza la ficha completa del paciente (datos personales, información
+     * médica y contactos de emergencia) en una sola transacción.
+     */
+    public function actualizarDetalle($idPaciente, array $d, array $contactos) {
+        $nul = fn($x) => ($x !== '' && $x !== null) ? $x : null;
+
+        $this->db->beginTransaction();
+        try {
+            $this->db->prepare(
+                "UPDATE paciente
+                    SET nombres = :nombres,
+                        apellidos = :apellidos,
+                        ci = :ci,
+                        fecha_nacimiento = :fecha,
+                        sexo = :sexo,
+                        telefono = :telefono,
+                        correo = :correo,
+                        direccion = :direccion,
+                        nro_seguro = :seguro,
+                        observaciones = :obs
+                  WHERE id_paciente = :id"
+            )->execute([
+                ':nombres'   => $d['nombres'],
+                ':apellidos' => $d['apellidos'],
+                ':ci'        => $d['ci'],
+                ':fecha'     => $d['fecha_nacimiento'],
+                ':sexo'      => $d['sexo'],
+                ':telefono'  => $d['telefono'],
+                ':correo'    => $nul($d['correo']),
+                ':direccion' => $d['direccion'],
+                ':seguro'    => $nul($d['nro_seguro']),
+                ':obs'       => $nul($d['observaciones']),
+                ':id'        => (int)$idPaciente,
+            ]);
+
+            // Información médica: se crea si el paciente aún no tenía ficha.
+            $this->db->prepare(
+                "INSERT INTO informacion_medica (id_paciente, tipo_sangre, alergias, fecha_actualizacion)
+                 SELECT :id, :sangre, :alergias, NOW()
+                  WHERE NOT EXISTS (SELECT 1 FROM informacion_medica WHERE id_paciente = :id2)"
+            )->execute([
+                ':id'       => (int)$idPaciente,
+                ':sangre'   => $d['tipo_sangre'],
+                ':alergias' => $nul($d['alergias']),
+                ':id2'      => (int)$idPaciente,
+            ]);
+
+            $this->db->prepare(
+                "UPDATE informacion_medica
+                    SET tipo_sangre = :sangre,
+                        alergias = :alergias,
+                        fecha_actualizacion = NOW()
+                  WHERE id_paciente = :id"
+            )->execute([
+                ':sangre'   => $d['tipo_sangre'],
+                ':alergias' => $nul($d['alergias']),
+                ':id'       => (int)$idPaciente,
+            ]);
+
+            // Los contactos se reemplazan por los que se enviaron en el formulario.
+            $this->db->prepare("DELETE FROM contacto_emergencia WHERE id_paciente = :id")
+                     ->execute([':id' => (int)$idPaciente]);
+
+            if ($contactos) {
+                $stmt = $this->db->prepare(
+                    "INSERT INTO contacto_emergencia (id_paciente, nombre, parentesco, telefono)
+                     VALUES (:id, :nombre, :parentesco, :telefono)"
+                );
+                foreach ($contactos as $c) {
+                    $stmt->execute([
+                        ':id'         => (int)$idPaciente,
+                        ':nombre'     => $c['nombre'],
+                        ':parentesco' => $nul($c['parentesco']),
+                        ':telefono'   => $c['telefono'],
+                    ]);
+                }
+            }
+
+            $this->db->commit();
+        } catch (Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+    }
+
     /** Pacientes activos para elegir en el formulario de nueva cita. */
     public function activos() {
         return $this->db->query(
