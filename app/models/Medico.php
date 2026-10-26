@@ -163,7 +163,9 @@ class Medico {
             $this->db->commit();
             return $id;
         } catch (Throwable $e) {
-            $this->db->rollBack();
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
             throw $e;
         }
     }

@@ -20,7 +20,12 @@ class Database {
                 self::$conn = new PDO($dsn, $username, $password, [
                     PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                    PDO::ATTR_EMULATE_PREPARES   => false,
+                    // Neon se conecta a través de PgBouncer (host terminado en "-pooler").
+                    // Con prepares nativos, pdo_pgsql envía "DEALLOCATE pdo_stmt_N" al
+                    // liberar cada sentencia; PgBouncer renombra las sentencias y ese
+                    // DEALLOCATE falla, abortando la transacción completa (25P02).
+                    // Con prepares emulados en el cliente no se envían PREPARE/DEALLOCATE.
+                    PDO::ATTR_EMULATE_PREPARES   => true,
                 ]);
             } catch (PDOException $e) {
                 // Para depuración inicial puedes ver el error real con: die($e->getMessage());

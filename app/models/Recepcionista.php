@@ -61,7 +61,9 @@ class Recepcionista {
             $this->db->commit();
             return $idCuenta;
         } catch (Throwable $e) {
-            $this->db->rollBack();
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
             throw $e;
         }
     }
