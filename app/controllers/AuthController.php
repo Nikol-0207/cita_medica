@@ -28,7 +28,6 @@ class AuthController {
                 $_SESSION['user_id']    = $usuario['id_cuenta_usuario'];
                 $_SESSION['user_name']  = $usuario['nombre'];
                 $_SESSION['user_role']  = $usuario['rol'];
-                $_SESSION['user_photo'] = $usuario['foto_perfil'] ?? null;
 
                 header("Location: index.php?route=" . Permisos::inicio());
             exit;
@@ -117,8 +116,9 @@ class AuthController {
         }
 
         // --- Foto (opcional) ---
-        $extFoto = null;
-        $tmpFoto = null;
+        // Se guarda en la base de datos (Neon) como data URI. El disco de Render
+        // es efímero: los archivos subidos se pierden en cada deploy o reinicio.
+        $fotoDataUri = null;
         if (isset($_FILES['foto']) && $_FILES['foto']['error'] !== UPLOAD_ERR_NO_FILE) {
             $f = $_FILES['foto'];
             if ($f['error'] !== UPLOAD_ERR_OK) {
@@ -127,12 +127,16 @@ class AuthController {
                 $errores[] = "La imagen no puede superar los 2 MB.";
             } else {
                 $mime = finfo_file(finfo_open(FILEINFO_MIME_TYPE), $f['tmp_name']);
-                $permitidos = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
-                if (!isset($permitidos[$mime])) {
+                $permitidos = ['image/jpeg', 'image/png', 'image/webp'];
+                if (!in_array($mime, $permitidos, true)) {
                     $errores[] = "Formato no permitido. Solo JPG, PNG o WEBP.";
                 } else {
-                    $extFoto = $permitidos[$mime];
-                    $tmpFoto = $f['tmp_name'];
+                    $bytes = file_get_contents($f['tmp_name']);
+                    if ($bytes === false) {
+                        $errores[] = "No se pudo leer la imagen subida.";
+                    } else {
+                        $fotoDataUri = 'data:' . $mime . ';base64,' . base64_encode($bytes);
+                    }
                 }
             }
         }
@@ -143,44 +147,71 @@ class AuthController {
             exit;
         }
 
-        // --- Guardar foto en disco ---
-        $nombreFoto = null;
-        if ($tmpFoto) {
-            $dir = ROOT_PATH . '/public/uploads/perfiles/';
-            if (!is_dir($dir)) {
-                mkdir($dir, 0755, true);
-            }
-            $nombreFoto = 'perfil_' . $id . '_' . time() . '.' . $extFoto;
-            if (!move_uploaded_file($tmpFoto, $dir . $nombreFoto)) {
-                $_SESSION['mensaje_error'] = "Error al guardar la imagen en el servidor.";
-                header("Location: index.php?route=perfil");
-                exit;
-            }
-        }
-
-        // --- Actualizar BD ---
-        $anterior = $this->usuarioModel->obtenerPorId($id);
-        $this->usuarioModel->actualizarPerfil($id, $nombre, $correo, $nuevoHash, $nombreFoto);
-
-        // Borrar la foto anterior
-        if ($nombreFoto && !empty($anterior['foto_perfil'])) {
-            $vieja = ROOT_PATH . '/public/uploads/perfiles/' . basename($anterior['foto_perfil']);
-            if (is_file($vieja)) {
-                unlink($vieja);
-            }
+        // --- Actualizar BD (la imagen viaja dentro de foto_perfil) ---
+        try {
+            $this->usuarioModel->actualizarPerfil($id, $nombre, $correo, $nuevoHash, $fotoDataUri);
+        } catch (Throwable $e) {
+            error_log($e->getMessage());
+            $_SESSION['mensaje_error'] = "No se pudo guardar el perfil: " . $e->getMessage();
+            header("Location: index.php?route=perfil");
+            exit;
         }
 
         // --- Refrescar sesión ---
         $_SESSION['user_name'] = $nombre;
-        if ($nombreFoto) {
-            $_SESSION['user_photo'] = $nombreFoto;
-        }
         if ($nuevoHash) {
             session_regenerate_id(true);
         }
 
         $_SESSION['mensaje_exito'] = "Perfil actualizado correctamente.";
         header("Location: index.php?route=perfil");
+        exit;
+    }
+
+    /**
+     * Sirve la foto de perfil del usuario logueado.
+     * Las fotos nuevas se guardan en cuenta_usuario.foto_perfil como data URI
+     * (base64) y por eso sobreviven a los redeploys de Render. Las antiguas
+     * quedaron como nombre de archivo y se sirven desde disco si aún existen.
+     */
+    public function avatar() {
+        if (!isset($_SESSION['user_id'])) {
+            http_response_code(403);
+            exit;
+        }
+
+        header('Cache-Control: no-store, max-age=0');
+
+        $foto = $this->usuarioModel->obtenerFoto((int)$_SESSION['user_id']);
+
+        // Foto nueva guardada en la base de datos
+        if (is_string($foto) && preg_match('#^data:(image/[a-zA-Z0-9.+-]+);base64,(.+)$#s', $foto, $m)) {
+            $bytes = base64_decode($m[2], true);
+            if ($bytes !== false) {
+                header('Content-Type: ' . $m[1]);
+                header('Content-Length: ' . strlen($bytes));
+                echo $bytes;
+                exit;
+            }
+        }
+
+        // Compatibilidad: fotos antiguas guardadas como archivo en disco
+        if (is_string($foto) && $foto !== 'default_avatar.png') {
+            $ruta = ROOT_PATH . '/public/uploads/perfiles/' . basename($foto);
+            if (is_file($ruta)) {
+                $mime = finfo_file(finfo_open(FILEINFO_MIME_TYPE), $ruta) ?: 'application/octet-stream';
+                header('Content-Type: ' . $mime);
+                header('Content-Length: ' . filesize($ruta));
+                readfile($ruta);
+                exit;
+            }
+        }
+
+        // Avatar por defecto
+        header('Content-Type: image/svg+xml');
+        echo '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#94a3b8">'
+           . '<path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"/>'
+           . '</svg>';
         exit;
     }
 

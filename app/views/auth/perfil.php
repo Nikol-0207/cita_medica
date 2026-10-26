@@ -1,11 +1,6 @@
 <?php
-$rutaFotoGrande = null;
-if (!empty($perfil['foto_perfil']) && $perfil['foto_perfil'] !== 'default_avatar.png') {
-    $archivo = basename($perfil['foto_perfil']);
-    if (is_file(ROOT_PATH . '/public/uploads/perfiles/' . $archivo)) {
-        $rutaFotoGrande = 'uploads/perfiles/' . rawurlencode($archivo);
-    }
-}
+// La foto se sirve desde la BD (Neon) mediante index.php?route=avatar
+$rutaFoto = 'index.php?route=avatar';
 $volver = Permisos::inicio();
 $datosMedico = $datosMedico ?? null;
 ?>
@@ -48,15 +43,7 @@ $datosMedico = $datosMedico ?? null;
             <div class="panel-box perfil-foto">
                 <div class="panel-body" style="text-align:center;">
                     <div id="avatar-preview">
-                        <?php if ($rutaFoto): ?>
-                            <img src="<?= $rutaFoto ?>" alt="Foto de perfil" class="avatar-grande">
-                        <?php else: ?>
-                            <span class="avatar-grande top-profile-default">
-                                <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
-                                    <path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"/>
-                                </svg>
-                            </span>
-                        <?php endif; ?>
+                        <img src="<?= $rutaFoto ?>" alt="Foto de perfil" class="avatar-grande">
                     </div>
                     <label for="foto" class="btn-secundario">Cambiar foto</label>
                     <input type="file" id="foto" name="foto" accept="image/jpeg,image/png,image/webp" hidden>

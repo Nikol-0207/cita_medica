@@ -73,6 +73,10 @@ switch ($route) {
         require_once ROOT_PATH . '/app/controllers/AdminController.php';
         (new AdminController())->configuraciones();
         break;
+    case 'avatar':
+        require_once ROOT_PATH . '/app/controllers/AuthController.php';
+        (new AuthController())->avatar();
+        break;
     case 'cambiar_foto':
         require_once ROOT_PATH . '/app/controllers/AuthController.php';
         (new AuthController())->cambiarFotoPerfil();

@@ -9,9 +9,10 @@ class Usuario {
     }
 
     public function autenticar($identificador, $password) {
-        // Se agrega u.foto_perfil a la consulta SELECT
-        $sql = "SELECT u.id_cuenta_usuario, u.nombre, u.correo, u.contraseña_hash, 
-                       u.foto_perfil, r.nombre AS rol, p.ci
+        // No se trae foto_perfil aquí: puede pesar varios MB y se sirve aparte
+        // mediante index.php?route=avatar
+        $sql = "SELECT u.id_cuenta_usuario, u.nombre, u.correo, u.contraseña_hash,
+                       r.nombre AS rol, p.ci
                 FROM cuenta_usuario u
                 JOIN rol r ON u.id_rol = r.id_rol
                 LEFT JOIN paciente p ON u.id_cuenta_usuario = p.id_cuenta_usuario
@@ -30,25 +31,23 @@ class Usuario {
     }
 
     /**
-     * Actualiza la ruta o nombre del archivo de la foto del usuario
+     * Devuelve el valor de foto_perfil: un data URI (data:image/...;base64,...)
+     * para las fotos nuevas o el nombre de archivo de las fotos antiguas.
      */
-    public function actualizarFoto($idCuentaUsuario, $nombreArchivo) {
-        $sql = "UPDATE cuenta_usuario 
-                SET foto_perfil = :foto 
-                WHERE id_cuenta_usuario = :id";
-
-        $stmt = $this->db->prepare($sql);
-        return $stmt->execute([
-            ':foto' => $nombreArchivo,
-            ':id'   => $idCuentaUsuario
-        ]);
+    public function obtenerFoto($idCuentaUsuario) {
+        $stmt = $this->db->prepare(
+            "SELECT foto_perfil FROM cuenta_usuario WHERE id_cuenta_usuario = :id"
+        );
+        $stmt->execute([':id' => (int)$idCuentaUsuario]);
+        $foto = $stmt->fetchColumn();
+        return $foto === false ? null : $foto;
     }
 
     /**
      * Obtiene los datos actualizados del usuario (útil para recargar la sesión o ver el perfil)
      */
     public function obtenerPorId($idCuentaUsuario) {
-        $sql = "SELECT u.id_cuenta_usuario, u.nombre, u.correo, u.foto_perfil, r.nombre AS rol
+        $sql = "SELECT u.id_cuenta_usuario, u.nombre, u.correo, r.nombre AS rol
                 FROM cuenta_usuario u
                 JOIN rol r ON u.id_rol = r.id_rol
                 WHERE u.id_cuenta_usuario = :id
@@ -86,6 +85,7 @@ public function existeDuplicado($nombre, $correo, $idExcluir) {
 
 /**
  * Actualiza nombre y correo; contraseña y foto solo si se envían (no null).
+ * $foto es un data URI (data:image/...;base64,...) que se guarda en Neon.
  */
 public function actualizarPerfil($id, $nombre, $correo, $hash = null, $foto = null) {
     $campos = ['nombre = :nombre', 'correo = :correo'];
