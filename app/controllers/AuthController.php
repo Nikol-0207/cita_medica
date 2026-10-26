@@ -152,7 +152,14 @@ class AuthController {
             $this->usuarioModel->actualizarPerfil($id, $nombre, $correo, $nuevoHash, $fotoDataUri);
         } catch (Throwable $e) {
             error_log($e->getMessage());
-            $_SESSION['mensaje_error'] = "No se pudo guardar el perfil: " . $e->getMessage();
+            if ($e instanceof PDOException && (string)$e->getCode() === '22001') {
+                // La imagen no cabe: falta aplicar la migración de la columna.
+                $_SESSION['mensaje_error'] = "La columna foto_perfil sigue siendo VARCHAR(255). "
+                    . "Ejecuta sql/2026-10-26_foto_perfil_text.sql en la MISMA base de datos "
+                    . "de Neon que usa Render y vuelve a intentar.";
+            } else {
+                $_SESSION['mensaje_error'] = "No se pudo guardar el perfil: " . $e->getMessage();
+            }
             header("Location: index.php?route=perfil");
             exit;
         }

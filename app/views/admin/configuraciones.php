@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Configuración de Colores - Clínica Vida Salud</title>
     <link rel="stylesheet" href="css/admin.css">
     <style>
@@ -105,6 +106,8 @@
 <body>
 
 <div class="admin-wrapper">
+    <button class="btn-menu-movil" type="button" aria-label="Abrir menú" onclick="document.body.classList.toggle('menu-abierto')">☰</button>
+    <div class="overlay-menu" onclick="document.body.classList.remove('menu-abierto')"></div>
     <aside class="sidebar" style="background-color: var(--sidebar-bg);">
         <div class="sidebar-header">
             <svg class="sidebar-logo-icon" viewBox="0 0 100 100" width="34" height="34">

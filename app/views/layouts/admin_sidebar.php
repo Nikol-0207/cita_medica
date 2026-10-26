@@ -5,6 +5,9 @@ $grupo   = fn($p) => str_starts_with($activo ?? '', $p);
 $inicio  = Permisos::inicio();
 $esMedico = Permisos::esMedico();
 ?>
+<!-- Menú móvil: el botón y el overlay solo se usan en pantallas chicas (ver admin.css) -->
+<button class="btn-menu-movil" type="button" aria-label="Abrir menú" onclick="document.body.classList.toggle('menu-abierto')">☰</button>
+<div class="overlay-menu" onclick="document.body.classList.remove('menu-abierto')"></div>
 <aside class="sidebar">
     <div class="sidebar-header">
         <svg class="sidebar-logo-icon" viewBox="0 0 100 100" width="34" height="34" xmlns="http://www.w3.org/2000/svg">
