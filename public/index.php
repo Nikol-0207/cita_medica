@@ -89,6 +89,10 @@ switch ($route) {
         require_once ROOT_PATH . '/app/controllers/AuthController.php';
         (new AuthController())->guardarPerfil();
         break;
+    case 'guardar_datos_personales':
+        require_once ROOT_PATH . '/app/controllers/AuthController.php';
+        (new AuthController())->guardarDatosPersonales();
+        break;
     case 'recepcionistas':
         require_once ROOT_PATH . '/app/controllers/RecepcionistaController.php';
         (new RecepcionistaController())->listar();

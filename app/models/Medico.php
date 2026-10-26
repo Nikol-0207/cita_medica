@@ -47,6 +47,22 @@ class Medico {
         return (bool)$stmt->fetchColumn();
     }
 
+    /** El médico solo puede actualizar su celular y correo desde su perfil. */
+    public function actualizarContacto($idCuenta, $telefono, $correo) {
+        $stmt = $this->db->prepare(
+            "UPDATE medico
+                SET telefono = :telefono,
+                    correo = :correo
+              WHERE id_cuenta_usuario = :id"
+        );
+        $stmt->execute([
+            ':telefono' => $telefono,
+            ':correo'   => $correo,
+            ':id'       => (int)$idCuenta,
+        ]);
+        return $stmt->rowCount();
+    }
+
     public function existeCorreoCuenta($correo) {
         $stmt = $this->db->prepare("SELECT 1 FROM cuenta_usuario WHERE LOWER(correo) = LOWER(:c) LIMIT 1");
         $stmt->execute([':c' => $correo]);

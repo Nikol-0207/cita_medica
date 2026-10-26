@@ -20,6 +20,57 @@ class Recepcionista {
         return (bool)$stmt->fetchColumn();
     }
 
+    /** Datos personales del recepcionista vinculado a la cuenta. */
+    public function datosDeCuenta($idCuenta) {
+        $stmt = $this->db->prepare(
+            "SELECT r.id_recepcionista, r.nombres, r.apellidos, r.ci, r.celular,
+                    r.fecha_nacimiento, r.direccion, r.estado, r.fecha_registro,
+                    u.correo
+             FROM recepcionista r
+             JOIN cuenta_usuario u ON u.id_cuenta_usuario = r.id_cuenta_usuario
+             WHERE r.id_cuenta_usuario = :id"
+        );
+        $stmt->execute([':id' => (int)$idCuenta]);
+        $fila = $stmt->fetch();
+        return $fila ?: null;
+    }
+
+    /** ¿Otro recepcionista ya usa ese CI? (se excluye la ficha de la cuenta actual). */
+    public function existeCiDeOtro($ci, $idCuenta) {
+        $stmt = $this->db->prepare(
+            "SELECT 1 FROM recepcionista
+             WHERE ci = :ci
+               AND id_cuenta_usuario IS DISTINCT FROM :id
+             LIMIT 1"
+        );
+        $stmt->execute([':ci' => $ci, ':id' => (int)$idCuenta]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    /** Actualiza los datos personales de la ficha del recepcionista. */
+    public function actualizarDatos($idCuenta, array $d) {
+        $stmt = $this->db->prepare(
+            "UPDATE recepcionista
+                SET nombres = :nombres,
+                    apellidos = :apellidos,
+                    ci = :ci,
+                    celular = :celular,
+                    fecha_nacimiento = :fecha,
+                    direccion = :direccion
+              WHERE id_cuenta_usuario = :id"
+        );
+        $stmt->execute([
+            ':nombres'   => $d['nombres'],
+            ':apellidos' => $d['apellidos'],
+            ':ci'        => $d['ci'],
+            ':celular'   => $d['celular'],
+            ':fecha'     => $d['fecha_nacimiento'],
+            ':direccion' => $d['direccion'],
+            ':id'        => (int)$idCuenta,
+        ]);
+        return $stmt->rowCount();
+    }
+
     /**
      * Crea la cuenta de acceso y la ficha del recepcionista en una sola transacción.
      */

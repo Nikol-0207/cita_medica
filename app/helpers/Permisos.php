@@ -18,6 +18,11 @@ class Permisos {
         return ($_SESSION['user_role'] ?? '') === 'Paciente';
     }
 
+    /** Rol Recepcionista (el nombre exacto puede variar: "Recepcionista", "Recepcionista..." ). */
+    public static function esRecepcionista() {
+        return stripos($_SESSION['user_role'] ?? '', 'recepc') !== false;
+    }
+
     /** Lee de la BD los permisos del rol del usuario y los guarda en la sesión. */
     public static function cargar() {
         $_SESSION['permisos'] = [];

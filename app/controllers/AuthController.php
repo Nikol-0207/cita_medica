@@ -57,11 +57,24 @@ class AuthController {
         $colores = (new Configuracion())->getColoresPersonalizados();
         $perfil  = $this->usuarioModel->obtenerPorId($_SESSION['user_id']);
 
-        // Datos profesionales del médico (solo lectura en su perfil)
-        $datosMedico = null;
+        // Datos personales según el rol. El paciente solo ve/edita sus datos
+        // personales (no información médica ni contacto de emergencia); el
+        // recepcionista edita su ficha; el médico solo celular y correo.
+        $datosPersonales = null;
+        $tipoPerfil      = null;
+
         if (Permisos::esMedico()) {
             require_once __DIR__ . '/../models/Medico.php';
             $datosMedico = (new Medico())->datosDeCuenta($_SESSION['user_id']);
+            $tipoPerfil  = 'medico';
+        } elseif (Permisos::esRecepcionista()) {
+            require_once __DIR__ . '/../models/Recepcionista.php';
+            $tipoPerfil      = 'recepcionista';
+            $datosPersonales = (new Recepcionista())->datosDeCuenta($_SESSION['user_id']);
+        } elseif (Permisos::esPaciente()) {
+            require_once __DIR__ . '/../models/Paciente.php';
+            $tipoPerfil      = 'paciente';
+            $datosPersonales = (new Paciente())->datosDeCuenta($_SESSION['user_id']);
         }
 
         $mensajeExito = $_SESSION['mensaje_exito'] ?? null;
@@ -173,6 +186,168 @@ class AuthController {
         $_SESSION['mensaje_exito'] = "Perfil actualizado correctamente.";
         header("Location: index.php?route=perfil");
         exit;
+    }
+
+    /**
+     * Guarda los datos personales del perfil según el rol:
+     *  - Paciente: solo sus datos personales.
+     *  - Recepcionista: su ficha personal.
+     *  - Médico: únicamente celular y correo.
+     */
+    public function guardarDatosPersonales() {
+        if (!isset($_SESSION['user_id'])) {
+            header("Location: index.php?route=home&open_modal=1");
+            exit;
+        }
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header("Location: index.php?route=perfil");
+            exit;
+        }
+
+        $id      = (int)$_SESSION['user_id'];
+        $errores = [];
+
+        try {
+            if (Permisos::esMedico()) {
+                require_once __DIR__ . '/../models/Medico.php';
+                $modelo = new Medico();
+
+                $telefono = trim($_POST['medico_telefono'] ?? '');
+                $correo   = trim($_POST['medico_correo'] ?? '');
+
+                if (!$modelo->datosDeCuenta($id)) {
+                    $errores[] = "Su cuenta no tiene una ficha de médico vinculada.";
+                } else {
+                    if ($telefono === '') {
+                        $errores[] = "El celular no puede estar vacío.";
+                    }
+                    if ($correo === '') {
+                        $errores[] = "El correo no puede estar vacío.";
+                    } elseif (!filter_var($correo, FILTER_VALIDATE_EMAIL)) {
+                        $errores[] = "El correo electrónico no es válido.";
+                    }
+
+                    if (!$errores) {
+                        $modelo->actualizarContacto($id, $telefono, $correo);
+                        $_SESSION['mensaje_exito'] = "Celular y correo actualizados correctamente.";
+                    }
+                }
+
+            } elseif (Permisos::esRecepcionista()) {
+                require_once __DIR__ . '/../models/Recepcionista.php';
+                $modelo = new Recepcionista();
+
+                if (!$modelo->datosDeCuenta($id)) {
+                    $errores[] = "Su cuenta no tiene una ficha de recepcionista vinculada.";
+                } else {
+                    $d = $this->leerDatosPersonales($_POST, 'celular', $errores);
+
+                    if (!$errores && $modelo->existeCiDeOtro($d['ci'], $id)) {
+                        $errores[] = "Ya existe otro recepcionista con ese CI.";
+                    }
+                    if (!$errores) {
+                        $modelo->actualizarDatos($id, $d);
+                        $_SESSION['mensaje_exito'] = "Datos personales actualizados correctamente.";
+                    }
+                }
+
+            } elseif (Permisos::esPaciente()) {
+                require_once __DIR__ . '/../models/Paciente.php';
+                $modelo = new Paciente();
+
+                if (!$modelo->datosDeCuenta($id)) {
+                    $errores[] = "Su cuenta no tiene una ficha de paciente vinculada.";
+                } else {
+                    $d = $this->leerDatosPersonales($_POST, 'telefono', $errores);
+
+                    if (!in_array($d['sexo'], ['M', 'F'], true)) {
+                        $errores[] = "El género seleccionado no es válido.";
+                    }
+                    if (!$errores && $modelo->existeCiDeOtro($d['ci'], $id)) {
+                        $errores[] = "Ya existe otro paciente con ese CI.";
+                    }
+                    if (!$errores) {
+                        $modelo->actualizarDatos($id, $d);
+                        $_SESSION['mensaje_exito'] = "Datos personales actualizados correctamente.";
+                    }
+                }
+
+            } else {
+                $errores[] = "Su rol no tiene datos personales editables.";
+            }
+
+        } catch (Throwable $e) {
+            error_log($e->getMessage());
+            if ($e instanceof PDOException && (string)$e->getCode() === '23505') {
+                $errores[] = "Ya existe un registro con ese CI.";
+            } else {
+                $errores[] = "No se pudieron guardar los datos: " . $e->getMessage();
+            }
+        }
+
+        if ($errores) {
+            $_SESSION['mensaje_error'] = implode(' ', $errores);
+        }
+        header("Location: index.php?route=perfil");
+        exit;
+    }
+
+    /**
+     * Lee y valida los campos personales comunes a paciente y recepcionista.
+     * $campoTelefono es 'telefono' (paciente) o 'celular' (recepcionista).
+     */
+    private function leerDatosPersonales(array $post, $campoTelefono, array &$errores) {
+        $d = [
+            'nombres'          => trim($post['nombres'] ?? ''),
+            'apellidos'        => trim($post['apellidos'] ?? ''),
+            'ci'               => trim($post['ci'] ?? ''),
+            'fecha_nacimiento' => trim($post['fecha_nacimiento'] ?? ''),
+            'direccion'        => trim($post['direccion'] ?? ''),
+            'telefono'         => trim($post[$campoTelefono] ?? ''),
+            'sexo'             => trim($post['sexo'] ?? 'M'),
+            'nro_seguro'       => trim($post['nro_seguro'] ?? ''),
+        ];
+
+        if ($d['nombres'] === '') {
+            $errores[] = "Los nombres son obligatorios.";
+        }
+        if ($d['apellidos'] === '') {
+            $errores[] = "Los apellidos son obligatorios.";
+        }
+        if ($d['ci'] === '') {
+            $errores[] = "El CI es obligatorio.";
+        }
+        if ($d['telefono'] === '') {
+            $errores[] = "El celular es obligatorio.";
+        }
+        if ($d['direccion'] === '') {
+            $errores[] = "La dirección es obligatoria.";
+        }
+
+        $errorFecha = $this->validarFechaNacimiento($d['fecha_nacimiento']);
+        if ($errorFecha !== null) {
+            $errores[] = $errorFecha;
+        }
+
+        return $d;
+    }
+
+    /** Devuelve un mensaje de error o null si la fecha es válida y no futura. */
+    private function validarFechaNacimiento($fecha) {
+        if ($fecha === '') {
+            return "La fecha de nacimiento es obligatoria.";
+        }
+        $dt = DateTime::createFromFormat('Y-m-d', $fecha);
+        if (!$dt || $dt->format('Y-m-d') !== $fecha) {
+            return "La fecha de nacimiento no es válida.";
+        }
+        if ($fecha > date('Y-m-d')) {
+            return "La fecha de nacimiento no puede ser futura.";
+        }
+        if ($fecha < '1900-01-01') {
+            return "La fecha de nacimiento no es válida.";
+        }
+        return null;
     }
 
     /**

@@ -21,6 +21,63 @@ class Paciente {
         return (int)$stmt->fetchColumn();
     }
 
+    /**
+     * Datos personales del paciente vinculado a la cuenta.
+     * No incluye información médica ni contacto de emergencia: el paciente
+     * solo puede editar sus datos personales desde su perfil.
+     */
+    public function datosDeCuenta($idCuenta) {
+        $stmt = $this->db->prepare(
+            "SELECT id_paciente, codigo, nombres, apellidos, ci, fecha_nacimiento,
+                    sexo, telefono, correo, direccion, nro_seguro, estado
+             FROM paciente
+             WHERE id_cuenta_usuario = :id"
+        );
+        $stmt->execute([':id' => (int)$idCuenta]);
+        $fila = $stmt->fetch();
+        return $fila ?: null;
+    }
+
+    /** ¿Otro paciente ya usa ese CI? (se excluye la ficha de la cuenta actual). */
+    public function existeCiDeOtro($ci, $idCuenta) {
+        $stmt = $this->db->prepare(
+            "SELECT 1 FROM paciente
+             WHERE ci = :ci
+               AND id_cuenta_usuario IS DISTINCT FROM :id
+             LIMIT 1"
+        );
+        $stmt->execute([':ci' => $ci, ':id' => (int)$idCuenta]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    /** Actualiza solo los datos personales de la ficha del paciente. */
+    public function actualizarDatos($idCuenta, array $d) {
+        $stmt = $this->db->prepare(
+            "UPDATE paciente
+                SET nombres = :nombres,
+                    apellidos = :apellidos,
+                    ci = :ci,
+                    fecha_nacimiento = :fecha,
+                    sexo = :sexo,
+                    telefono = :telefono,
+                    direccion = :direccion,
+                    nro_seguro = :seguro
+              WHERE id_cuenta_usuario = :id"
+        );
+        $stmt->execute([
+            ':nombres'   => $d['nombres'],
+            ':apellidos' => $d['apellidos'],
+            ':ci'        => $d['ci'],
+            ':fecha'     => $d['fecha_nacimiento'],
+            ':sexo'      => $d['sexo'],
+            ':telefono'  => $d['telefono'],
+            ':direccion' => $d['direccion'],
+            ':seguro'    => $d['nro_seguro'],
+            ':id'        => (int)$idCuenta,
+        ]);
+        return $stmt->rowCount();
+    }
+
     /** Pacientes activos para elegir en el formulario de nueva cita. */
     public function activos() {
         return $this->db->query(
