@@ -57,6 +57,19 @@ class CitaController {
 
         $colores      = (new Configuracion())->getColoresPersonalizados();
         require_once __DIR__ . '/../helpers/Paginador.php';
+
+        // El paciente no puede cancelar una ficha cuya hora ya pasó: si seguía
+        // Programada, se marca Inasistencia al mostrarle su listado. El personal
+        // y el médico conservan el botón para marcarla manualmente.
+        // Si el trigger de la BD aún no está corregido, no se rompe el listado.
+        if ($esPaciente && $paciente > 0) {
+            try {
+                $this->model->marcarInasistenciasVencidas($paciente);
+            } catch (Throwable $e) {
+                error_log('No se pudieron marcar inasistencias vencidas: ' . $e->getMessage());
+            }
+        }
+
         $pag          = Paginador::cortar($this->model->listar($filtros));
         $citas        = $pag['items'];
         $medicos      = $this->model->medicosActivos();
@@ -259,6 +272,84 @@ class CitaController {
     }
 
     // ----------------------------------------------------------------
+    // MARCAR ATENDIDA (solo el médico, citas Confirmadas o en Inasistencia)
+    // ----------------------------------------------------------------
+    public function atender() {
+        Permisos::exigir('citas.ver');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header("Location: index.php?route=citas");
+            exit;
+        }
+
+        if (!Permisos::esMedico()) {
+            $_SESSION['mensaje_error'] = "Solo el médico puede marcar una cita como Atendida.";
+            header("Location: index.php?route=citas");
+            exit;
+        }
+
+        $id       = ctype_digit($_POST['id_cita'] ?? '') ? (int)$_POST['id_cita'] : 0;
+        $idMedico = (new Medico())->idDeCuenta($_SESSION['user_id']);
+
+        try {
+            $ok = $id > 0 && $idMedico > 0
+                && $this->model->marcarAtendida($id, $idMedico);
+            if ($ok) {
+                $_SESSION['mensaje_exito'] = "La cita se marcó como Atendida.";
+            } else {
+                $_SESSION['mensaje_error'] = "No se pudo marcar como Atendida: la cita no es suya, "
+                    . "no está Confirmada o en Inasistencia, o su hora aún no ha comenzado.";
+            }
+        } catch (Throwable $e) {
+            error_log($e->getMessage());
+            $_SESSION['mensaje_error'] = "No se pudo marcar como Atendida: " . $e->getMessage();
+        }
+
+        header("Location: index.php?route=citas");
+        exit;
+    }
+
+    // ----------------------------------------------------------------
+    // MARCAR INASISTENCIA (médico con sus citas; personal administrativo)
+    // ----------------------------------------------------------------
+    public function inasistencia() {
+        Permisos::exigir('citas.ver');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header("Location: index.php?route=citas");
+            exit;
+        }
+
+        $esMedico = Permisos::esMedico();
+        $esStaff  = !$esMedico && !Permisos::esPaciente();
+
+        if (!$esMedico && !$esStaff) {
+            $_SESSION['mensaje_error'] = "No tiene permiso para marcar inasistencias.";
+            header("Location: index.php?route=citas");
+            exit;
+        }
+
+        $id       = ctype_digit($_POST['id_cita'] ?? '') ? (int)$_POST['id_cita'] : 0;
+        $idMedico = $esMedico ? (new Medico())->idDeCuenta($_SESSION['user_id']) : 0;
+
+        try {
+            $ok = $id > 0
+                && (!$esMedico || $idMedico > 0)
+                && $this->model->marcarInasistencia($id, $idMedico);
+            if ($ok) {
+                $_SESSION['mensaje_exito'] = "La cita se marcó como Inasistencia.";
+            } else {
+                $_SESSION['mensaje_error'] = "No se pudo marcar la inasistencia: la cita no existe, "
+                    . "ya cambió de estado, no es de su agenda o su hora aún no ha comenzado.";
+            }
+        } catch (Throwable $e) {
+            error_log($e->getMessage());
+            $_SESSION['mensaje_error'] = "No se pudo marcar la inasistencia: " . $e->getMessage();
+        }
+
+        header("Location: index.php?route=citas");
+        exit;
+    }
+
+    // ----------------------------------------------------------------
     // CANCELAR (admin, recepcionista y el paciente solo de la suya)
     // ----------------------------------------------------------------
     public function cancelar() {
@@ -287,20 +378,32 @@ class CitaController {
             $idPaciente = (new Paciente())->idDeCuenta($_SESSION['user_id']);
         }
 
-        $resultado = ($id > 0 && ($idPaciente > 0 || !Permisos::esPaciente()))
-            ? $this->model->cancelar($id, $idPaciente, $motivo)
-            : 'no_existe';
+        try {
+            $resultado = ($id > 0 && ($idPaciente > 0 || !Permisos::esPaciente()))
+                ? $this->model->cancelar($id, $idPaciente, $motivo)
+                : 'no_existe';
+        } catch (Throwable $e) {
+            error_log($e->getMessage());
+            $resultado = 'error';
+        }
 
         switch ($resultado) {
             case 'ok':
                 $_SESSION['mensaje_exito'] = "Cita cancelada: se registró el motivo y la ficha quedó libre "
                     . "para volver a reservarse.";
                 break;
+            case 'inasistencia':
+                $_SESSION['mensaje_exito'] = "Ya pasó la hora de la cita y seguía Programada: "
+                    . "quedó registrada como Inasistencia y ya no se puede cancelar.";
+                break;
             case 'estado':
                 $_SESSION['mensaje_error'] = "Solo se pueden cancelar citas en estado Programada o Confirmada.";
                 break;
             case 'pasada':
                 $_SESSION['mensaje_error'] = "Ya pasó la fecha y hora de atención: la cita ya no se puede cancelar.";
+                break;
+            case 'error':
+                $_SESSION['mensaje_error'] = "No se pudo cancelar la cita. Intente nuevamente.";
                 break;
             default:
                 $_SESSION['mensaje_error'] = "La cita no existe o no le pertenece.";

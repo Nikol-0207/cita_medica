@@ -30,6 +30,14 @@ DECLARE
     zona_horaria text := 'America/La_Paz';
     inicio_cita  timestamptz;
 BEGIN
+    -- Si solo cambió el estado (por ejemplo a Atendida o Inasistencia), no se
+    -- valida la fecha: la cita ya existía y puede estar en el pasado.
+    IF TG_OP = 'UPDATE'
+       AND NEW.fecha IS NOT DISTINCT FROM OLD.fecha
+       AND NEW.hora_inicio IS NOT DISTINCT FROM OLD.hora_inicio THEN
+        RETURN NEW;
+    END IF;
+
     -- fecha (date) + hora_inicio (time) => timestamp local; AT TIME ZONE lo
     -- convierte al instante real en la zona de la clínica.
     inicio_cita := ((NEW.fecha + NEW.hora_inicio) AT TIME ZONE zona_horaria);

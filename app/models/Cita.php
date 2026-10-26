@@ -179,6 +179,78 @@ class Cita {
     }
 
     /**
+     * Marca como Inasistencia las citas que siguen en "Programada" cuando ya
+     * pasó su hora de inicio (nadie las confirmó ni canceló).
+     * Si se indica un paciente, solo revisa las citas de ese paciente: así el
+     * paciente ve su cita vencida como Inasistencia y sin opción de cancelar,
+     * mientras que el personal conserva la acción manual de marcarla.
+     */
+    public function marcarInasistenciasVencidas($idPaciente = 0) {
+        $sql = "UPDATE cita
+                   SET estado = 'Inasistencia', fecha_actualizacion = NOW()
+                 WHERE estado = 'Programada'
+                   AND ((fecha + hora_inicio) AT TIME ZONE 'America/La_Paz') <= NOW()";
+        $params = [];
+        if ($idPaciente > 0) {
+            $sql .= " AND id_paciente = :pac";
+            $params[':pac'] = (int)$idPaciente;
+        }
+        $sql .= " RETURNING id_cita";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_COLUMN);
+    }
+
+    /**
+     * El médico marca como Atendida una cita Confirmada o que quedó en
+     * Inasistencia (para corregir a un paciente que llegó tarde).
+     * Solo desde que empezó la hora de la cita y solo de su propia agenda.
+     */
+    public function marcarAtendida($idCita, $idMedico = 0) {
+        $sql = "UPDATE cita
+                   SET estado = 'Atendida', fecha_actualizacion = NOW()
+                 WHERE id_cita = :id
+                   AND estado IN ('Confirmada', 'Inasistencia')
+                   AND ((fecha + hora_inicio) AT TIME ZONE 'America/La_Paz') <= NOW()";
+        $params = [':id' => (int)$idCita];
+
+        if ($idMedico > 0) {
+            $sql .= " AND id_medico = :med";
+            $params[':med'] = (int)$idMedico;
+        }
+
+        $sql .= " RETURNING id_cita";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    /**
+     * Marca una cita como Inasistencia. El médico solo puede hacerlo con sus
+     * propias citas; el personal administrativo, con cualquiera.
+     * Solo se permite desde que empezó la hora de la cita.
+     */
+    public function marcarInasistencia($idCita, $idMedico = 0) {
+        $sql = "UPDATE cita
+                   SET estado = 'Inasistencia', fecha_actualizacion = NOW()
+                 WHERE id_cita = :id
+                   AND estado IN ('Programada', 'Confirmada')
+                   AND ((fecha + hora_inicio) AT TIME ZONE 'America/La_Paz') <= NOW()";
+        $params = [':id' => (int)$idCita];
+
+        if ($idMedico > 0) {
+            $sql .= " AND id_medico = :med";
+            $params[':med'] = (int)$idMedico;
+        }
+
+        $sql .= " RETURNING id_cita";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    /**
      * Cancela una cita mientras su fecha + hora de inicio NO haya pasado
      * (programada a las 16:00, cancelada a las 15:00 → se permite).
      * Guarda el motivo indicado por quien cancela.
@@ -212,6 +284,11 @@ class Cita {
             return 'estado';
         }
         if (strtotime($cita['fecha'] . ' ' . $cita['hora_inicio']) <= time()) {
+            // Si seguía en Programada, la hora pasó sin confirmación ni
+            // cancelación: queda como Inasistencia.
+            if ($cita['estado'] === 'Programada') {
+                return $this->marcarInasistencia($idCita) ? 'inasistencia' : 'pasada';
+            }
             return 'pasada';
         }
 
@@ -223,7 +300,7 @@ class Cita {
                         fecha_actualizacion = NOW()
                   WHERE id_cita = :id2
                     AND estado IN ('Programada', 'Confirmada')
-                    AND (fecha + hora_inicio) > NOW()";
+                    AND ((fecha + hora_inicio) AT TIME ZONE 'America/La_Paz') > NOW()";
         $params = [':id2' => (int)$idCita, ':motivo' => $motivo];
         if ($idPaciente > 0) {
             $sql .= " AND id_paciente = :pac2";

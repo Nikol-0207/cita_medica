@@ -49,6 +49,14 @@ switch ($route) {
         require_once ROOT_PATH . '/app/controllers/citaController.php';
         (new CitaController())->confirmar();
         break;
+    case 'citas_atender':
+        require_once ROOT_PATH . '/app/controllers/citaController.php';
+        (new CitaController())->atender();
+        break;
+    case 'citas_inasistencia':
+        require_once ROOT_PATH . '/app/controllers/citaController.php';
+        (new CitaController())->inasistencia();
+        break;
     case 'citas_cancelar':
         require_once ROOT_PATH . '/app/controllers/citaController.php';
         (new CitaController())->cancelar();

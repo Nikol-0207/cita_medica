@@ -2,6 +2,7 @@
 // Espera: $citas, $medicos, $estados, $filtros, $hayFiltros, $colores, $mensajeExito, $mensajeError
 $esMedico      = $esMedico ?? false;     // el médico solo ve su propia agenda
 $esPaciente    = $esPaciente ?? false;   // el paciente solo ve las suyas
+$esStaff       = !$esMedico && !$esPaciente; // admin o recepcionista
 $puedeCrear      = $puedeCrear ?? false;
 $puedeConfirmar  = $puedeConfirmar ?? false;
 $puedeCancelar   = $puedeCancelar ?? false;
@@ -38,6 +39,7 @@ $f           = fn($k) => htmlspecialchars($filtros[$k] ?? '', ENT_QUOTES);
             padding: 5px 8px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 12px; width: 190px;
         }
         .motivo-cancelacion { color: #9F1239; font-size: 12px; display: block; margin-top: 3px; }
+        .btn-inasistencia { background: #B45309; }
     </style>
 </head>
 <body>
@@ -129,7 +131,7 @@ $f           = fn($k) => htmlspecialchars($filtros[$k] ?? '', ENT_QUOTES);
                                     <th>Especialidad</th>
                                     <th>Motivo</th>
                                     <th>Estado</th>
-                                    <?php if ($puedeConfirmar || $puedeCancelar): ?><th>Acciones</th><?php endif; ?>
+                                    <?php if ($puedeConfirmar || $puedeCancelar || $esMedico || $esStaff): ?><th>Acciones</th><?php endif; ?>
                                 </tr>
                             </thead>
                             <tbody>
@@ -140,8 +142,9 @@ $f           = fn($k) => htmlspecialchars($filtros[$k] ?? '', ENT_QUOTES);
                                         $motivo   = trim($c['motivo'] ?? '');
                                         $motivo   = $motivo === '' ? '—' : (mb_strlen($motivo) > 45 ? mb_substr($motivo, 0, 45) . '…' : $motivo);
                                         $paciente = $c['paciente_nombres'] . ' ' . $c['paciente_apellidos'];
-                                        // ¿Ya pasó la fecha y hora de atención? Entonces ya no se puede cancelar.
-                                        $noPaso = strtotime($c['fecha'] . ' ' . $c['hora_inicio']) <= time();
+                                        // ¿Ya empezó la hora de la cita? Desde ese momento
+                                        // el paciente ya no puede cancelar.
+                                        $yaEmpezo = strtotime($c['fecha'] . ' ' . $c['hora_inicio']) <= time();
                                     ?>
                                     <tr>
                                         <td><?= (int)$pag['desde'] + $i ?></td>
@@ -166,18 +169,48 @@ $f           = fn($k) => htmlspecialchars($filtros[$k] ?? '', ENT_QUOTES);
                                                 <?= htmlspecialchars($c['estado']) ?>
                                             </span>
                                         </td>
-                                        <?php if ($puedeConfirmar || $puedeCancelar): ?>
+                                        <?php if ($puedeConfirmar || $puedeCancelar || $esMedico || $esStaff): ?>
                                         <td>
                                             <?php
-                                                $muestraConfirmar = $puedeConfirmar && $c['estado'] === 'Programada';
-                                                $muestraCancelar  = $puedeCancelar && !$noPaso
-                                                    && in_array($c['estado'], ['Programada', 'Confirmada'], true);
+                                                $estado = $c['estado'];
+                                                $muestraConfirmar = $puedeConfirmar && $estado === 'Programada' && !$yaEmpezo;
+                                                $muestraCancelar  = $puedeCancelar && !$yaEmpezo
+                                                    && in_array($estado, ['Programada', 'Confirmada'], true);
+
+                                                // El médico marca Atendida desde Confirmada o corrige
+                                                // una Inasistencia de un paciente que sí llegó.
+                                                $muestraAtender = $esMedico && $yaEmpezo
+                                                    && in_array($estado, ['Confirmada', 'Inasistencia'], true);
+
+                                                // Inasistencia: el médico en sus citas vencidas sin
+                                                // atención; el personal administrativo cuando el
+                                                // paciente no canceló ni confirmó (seguía Programada).
+                                                $muestraInasistencia = $yaEmpezo && (
+                                                    ($esMedico && in_array($estado, ['Programada', 'Confirmada'], true))
+                                                    || ($esStaff && $estado === 'Programada')
+                                                );
                                             ?>
                                             <?php if ($muestraConfirmar): ?>
                                                 <form action="index.php?route=citas_confirmar" method="POST" style="display:inline"
                                                       onsubmit="return confirm('¿Confirmar la cita <?= htmlspecialchars($c['codigo']) ?>?');">
                                                     <input type="hidden" name="id_cita" value="<?= (int)$c['id_cita'] ?>">
                                                     <button type="submit" class="btn btn-main" style="padding:5px 10px;font-size:12px">Confirmar</button>
+                                                </form>
+                                            <?php endif; ?>
+
+                                            <?php if ($muestraAtender): ?>
+                                                <form action="index.php?route=citas_atender" method="POST" style="display:inline"
+                                                      onsubmit="return confirm('¿Marcar la cita <?= htmlspecialchars($c['codigo']) ?> como Atendida?');">
+                                                    <input type="hidden" name="id_cita" value="<?= (int)$c['id_cita'] ?>">
+                                                    <button type="submit" class="btn btn-main" style="padding:5px 10px;font-size:12px">Atendida</button>
+                                                </form>
+                                            <?php endif; ?>
+
+                                            <?php if ($muestraInasistencia): ?>
+                                                <form action="index.php?route=citas_inasistencia" method="POST" style="display:inline"
+                                                      onsubmit="return confirm('¿Marcar la cita <?= htmlspecialchars($c['codigo']) ?> como Inasistencia?');">
+                                                    <input type="hidden" name="id_cita" value="<?= (int)$c['id_cita'] ?>">
+                                                    <button type="submit" class="btn btn-inasistencia" style="padding:5px 10px;font-size:12px">Inasistencia</button>
                                                 </form>
                                             <?php endif; ?>
 
@@ -192,7 +225,7 @@ $f           = fn($k) => htmlspecialchars($filtros[$k] ?? '', ENT_QUOTES);
                                                 </form>
                                             <?php endif; ?>
 
-                                            <?php if (!$muestraConfirmar && !$muestraCancelar): ?>
+                                            <?php if (!$muestraConfirmar && !$muestraCancelar && !$muestraAtender && !$muestraInasistencia): ?>
                                                 <span class="muted">—</span>
                                             <?php endif; ?>
                                         </td>
