@@ -106,7 +106,7 @@ class CitaController {
                 $errorDisp = "Ese horario venció el " . date('d/m/Y', strtotime($horario['fecha_fin'])) . ".";
             } else {
                 if ($fecha === '') {
-                    $fecha = $this->proximaFecha($horario['dia_semana'], $horario['hora_fin']);
+                    $fecha = $this->proximaFecha($horario['dia_semana'], $horario['hora_fin'], (int)$horario['duracion_cita']);
                 }
                 $fechaOk = $this->validarFecha($fecha, $horario['dia_semana'], $horario['fecha_fin'], $errorDisp);
                 if ($fechaOk !== null) {
@@ -156,7 +156,7 @@ class CitaController {
                 $errores[] = "Ese horario venció el " . date('d/m/Y', strtotime($horario['fecha_fin'])) . ".";
             } else {
                 if ($fecha === '') {
-                    $fecha = $this->proximaFecha($horario['dia_semana'], $horario['hora_fin']);
+                    $fecha = $this->proximaFecha($horario['dia_semana'], $horario['hora_fin'], (int)$horario['duracion_cita']);
                 }
                 $err = null;
                 $fechaOk = $this->validarFecha($fecha, $horario['dia_semana'], $horario['fecha_fin'], $err);
@@ -188,20 +188,26 @@ class CitaController {
             }
         }
 
-        // --- Ficha: debe existir, estar alineada al horario y libre ---
+        // --- Ficha: debe existir, estar alineada al horario, no haber pasado y estar libre ---
         $fichaOk = false;
         if ($horario && $fecha !== '' && $ini !== '' && $fin !== '' && !$errores) {
-            foreach ($this->model->disponibilidad($horario, $fecha) as $f) {
-                if ($f['inicio'] === $ini && $f['fin'] === $fin) {
-                    $fichaOk = true;
-                    if ($f['ocupada']) {
-                        $errores[] = "Esa ficha de {$ini} a {$fin} ya está ocupada ({$f['estado']}).";
+            $inicioTs = strtotime($fecha . ' ' . $ini);
+
+            if ($inicioTs !== false && $inicioTs < time()) {
+                $errores[] = "Esa hora ya pasó. Elija una ficha disponible.";
+            } else {
+                foreach ($this->model->disponibilidad($horario, $fecha) as $f) {
+                    if ($f['inicio'] === $ini && $f['fin'] === $fin) {
+                        $fichaOk = true;
+                        if ($f['ocupada']) {
+                            $errores[] = "Esa ficha de {$ini} a {$fin} ya está ocupada ({$f['estado']}).";
+                        }
+                        break;
                     }
-                    break;
                 }
-            }
-            if (!$fichaOk && !$errores) {
-                $errores[] = "La hora elegida no corresponde a ninguna ficha de ese horario.";
+                if (!$fichaOk && !$errores) {
+                    $errores[] = "La hora elegida no corresponde a ninguna ficha de ese horario.";
+                }
             }
         }
 
@@ -308,18 +314,23 @@ class CitaController {
     // ----------------------------------------------------------------
     // AUXILIARES
     // ----------------------------------------------------------------
-    /** Próximo día (o el de hoy si aún quedan horas) de la semana dada. */
-    private function proximaFecha($diaSemana, $horaFin) {
+    /** Próximo día (o el de hoy si aún queda alguna ficha por empezar) de la semana dada. */
+    private function proximaFecha($diaSemana, $horaFin, $duracion = 0) {
         $dias = ['Domingo' => 0, 'Lunes' => 1, 'Martes' => 2, 'Miércoles' => 3,
                  'Jueves' => 4, 'Viernes' => 5, 'Sábado' => 6];
         $objetivo  = $dias[$diaSemana] ?? 1;
         $hoy       = new DateTime('today');
         $diferencia = ($objetivo - (int)$hoy->format('w') + 7) % 7;
 
-        // Si hoy es el día pero el horario ya terminó, se pasa a la próxima semana.
+        // Si hoy es el día pero ya empezó la última ficha (o el horario terminó),
+        // se pasa a la próxima semana.
         if ($diferencia === 0) {
             $finHorario = new DateTime('today ' . substr($horaFin, 0, 5));
-            if (new DateTime('now') >= $finHorario) {
+            $ultimaFicha = clone $finHorario;
+            if ($duracion > 0) {
+                $ultimaFicha->modify('-' . $duracion . ' minutes');
+            }
+            if (new DateTime('now') >= $ultimaFicha) {
                 $diferencia = 7;
             }
         }

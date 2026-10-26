@@ -190,7 +190,11 @@ $diaSemana = ['Domingo' => 0, 'Lunes' => 1, 'Martes' => 2, 'Miércoles' => 3,
                             </div>
 
                             <?php if (empty($fichas)): ?>
-                                <p class="placeholder-text">Ese horario no tiene fichas calculadas (revisa la duración y el rango de horas).</p>
+                                <p class="placeholder-text">
+                                    <?= $fecha === date('Y-m-d')
+                                        ? 'Ya no quedan fichas por empezar hoy. Elige otra fecha.'
+                                        : 'Ese horario no tiene fichas calculadas (revisa la duración y el rango de horas).' ?>
+                                </p>
                             <?php else: ?>
                                 <div class="fichas-grid">
                                     <?php foreach ($fichas as $f): ?>

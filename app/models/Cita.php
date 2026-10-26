@@ -112,9 +112,18 @@ class Cita {
         $ini = self::aMinutos($horario['hora_inicio']);
         $fin = self::aMinutos($horario['hora_fin']);
 
+        // Para la fecha de hoy no se ofrecen fichas cuya hora de inicio ya pasó,
+        // aunque el horario de atención todavía no haya terminado.
+        $esHoy    = ($fecha === date('Y-m-d'));
+        $ahoraMin = (int)date('H') * 60 + (int)date('i') + (int)date('s') / 60;
+
         $fichas = [];
         if ($dur > 0) {
             for ($t = $ini; $t + $dur <= $fin; $t += $dur) {
+                if ($esHoy && $t < $ahoraMin) {
+                    continue;
+                }
+
                 $ocupada = null;
                 foreach ($citadas as $c) {
                     if ($c['ini'] < $t + $dur && $c['fin'] > $t) {   // solape
