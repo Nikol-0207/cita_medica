@@ -22,20 +22,49 @@ class AuthController {
             $identificador = trim($_POST['identificador'] ?? '');
             $password = $_POST['password'] ?? '';
 
-            $usuario = $this->usuarioModel->autenticar($identificador, $password);
+            $resultado = $this->usuarioModel->autenticar($identificador, $password);
 
-            if ($usuario) {
+            if (!empty($resultado['ok'])) {
+                $usuario = $resultado['usuario'];
                 $_SESSION['user_id']    = $usuario['id_cuenta_usuario'];
                 $_SESSION['user_name']  = $usuario['nombre'];
                 $_SESSION['user_role']  = $usuario['rol'];
 
                 header("Location: index.php?route=" . Permisos::inicio());
             exit;
-            } else {
-                $_SESSION['login_error'] = "Usuario, CI o contraseña incorrectos.";
-                header("Location: index.php?route=home&open_modal=1");
-                exit;
             }
+
+            $_SESSION['login_error'] = $this->mensajeLogin($resultado);
+            header("Location: index.php?route=home&open_modal=1");
+            exit;
+        }
+    }
+
+    /**
+     * Mensaje de error del login según QUÉ dato falló: el campo vacío,
+     * el correo/CI/usuario inexistente o la contraseña.
+     */
+    private function mensajeLogin(array $r) {
+        switch ($r['error'] ?? '') {
+            case 'vacio_identificador':
+                return "Escribe tu correo, nombre de usuario o CI.";
+            case 'vacio_clave':
+                return "Escribe tu contraseña.";
+            case 'no_existe':
+                if (($r['tipo'] ?? '') === 'correo') {
+                    return "No existe ninguna cuenta con ese correo electrónico.";
+                }
+                if (($r['tipo'] ?? '') === 'ci') {
+                    return "No existe ninguna cuenta con ese CI.";
+                }
+                return "No existe ninguna cuenta con ese nombre de usuario.";
+            case 'clave':
+                $nombre = (string)($r['nombre'] ?? '');
+                return $nombre !== ''
+                    ? "La contraseña de «{$nombre}» es incorrecta."
+                    : "La contraseña es incorrecta.";
+            default:
+                return "Usuario, CI o contraseña incorrectos.";
         }
     }
 

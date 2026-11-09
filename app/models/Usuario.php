@@ -12,8 +12,23 @@ class Usuario {
      * Login por correo, nombre de usuario o CI.
      * El correo y el CI viven en `persona`; el usuario y la contraseña en
      * `cuenta_usuario` (nombre_usuario / contrasena_hash).
+     *
+     * Devuelve un resultado que permite decirle al usuario QUÉ dato falló:
+     *   ['ok' => true,  'usuario' => fila]
+     *   ['ok' => false, 'error' => 'vacio_identificador']  → no escribió el usuario/ci/correo
+     *   ['ok' => false, 'error' => 'vacio_clave']          → no escribió la contraseña
+     *   ['ok' => false, 'error' => 'no_existe', 'tipo' => 'correo'|'ci'|'usuario']
+     *   ['ok' => false, 'error' => 'clave', 'nombre' => nombre de usuario hallado]
      */
     public function autenticar($identificador, $password) {
+        $identificador = trim((string)$identificador);
+        if ($identificador === '') {
+            return ['ok' => false, 'error' => 'vacio_identificador'];
+        }
+        if ((string)$password === '') {
+            return ['ok' => false, 'error' => 'vacio_clave'];
+        }
+
         // No se trae foto_perfil aquí: puede pesar varios MB y se sirve aparte
         // mediante index.php?route=avatar
         $sql = "SELECT u.id_cuenta_usuario, u.nombre_usuario AS nombre,
@@ -31,10 +46,23 @@ class Usuario {
         $stmt->execute([':id' => $identificador, ':id2' => $identificador]);
         $user = $stmt->fetch();
 
-        if ($user && password_verify($password, $user['contrasena_hash'])) {
-            return $user;
+        if (!$user) {
+            // ¿Qué tipo de dato intentó? Para decirle cuál de los tres está mal.
+            if (filter_var($identificador, FILTER_VALIDATE_EMAIL)) {
+                $tipo = 'correo';
+            } elseif (preg_match('/^\d+$/', $identificador)) {
+                $tipo = 'ci';
+            } else {
+                $tipo = 'usuario';
+            }
+            return ['ok' => false, 'error' => 'no_existe', 'tipo' => $tipo];
         }
-        return false;
+
+        if (!password_verify($password, $user['contrasena_hash'])) {
+            return ['ok' => false, 'error' => 'clave', 'nombre' => $user['nombre']];
+        }
+
+        return ['ok' => true, 'usuario' => $user];
     }
 
     /**
