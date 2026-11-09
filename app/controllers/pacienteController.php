@@ -103,7 +103,7 @@ class PacienteController {
     // GUARDAR CAMBIOS DE LA FICHA DEL PACIENTE
     // ----------------------------------------------------------------
     public function actualizar() {
-        Permisos::exigir('pacientes.ver');
+        Permisos::exigir('pacientes.editar');
 
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             header("Location: index.php?route=pacientes");
@@ -195,6 +195,9 @@ class PacienteController {
         }
         if ($d['correo'] !== '' && !filter_var($d['correo'], FILTER_VALIDATE_EMAIL)) {
             $errores[] = "El correo electrónico no es válido.";
+        }
+        if ($d['correo'] !== '' && $this->model->existeCorreoDeOtroPaciente($d['correo'], $id)) {
+            $errores[] = "Ya existe otro paciente con ese correo electrónico.";
         }
         if ($d['fecha_nacimiento'] !== '') {
             $fecha = DateTime::createFromFormat('Y-m-d', $d['fecha_nacimiento']);
@@ -314,6 +317,10 @@ class PacienteController {
 
     if ($d['correo'] !== '' && !filter_var($d['correo'], FILTER_VALIDATE_EMAIL)) {
         $errores[] = "El correo electrónico no es válido.";
+    }
+    // El correo es único en persona (índice sobre LOWER(correo)).
+    if ($d['correo'] !== '' && $this->model->existeCorreo($d['correo'])) {
+        $errores[] = "Ya existe una persona con ese correo electrónico.";
     }
 
     // 3. Contacto de emergencia: opcional, pero si lo llena debe estar completo

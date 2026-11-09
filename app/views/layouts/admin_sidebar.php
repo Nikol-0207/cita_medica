@@ -49,7 +49,7 @@ $esMedico = Permisos::esMedico();
 
         <?php if (Permisos::tiene('medicos.ver')): ?>
             <a href="index.php?route=medicos" class="menu-item<?= $grupo('medicos') ? ' active' : '' ?>"><span class="icon">👨‍⚕️</span><span>Médicos</span></a>
-            <?php if ($grupo('medicos') && Permisos::tiene('medicos.crear')): ?>
+            <?php if ($grupo('medicos') && Permisos::tiene('medicos.gestionar')): ?>
             <div class="submenu">
                 <a href="index.php?route=medicos_crear" class="menu-item<?= $act('medicos_crear') ?>"><span>○ Registrar médico</span></a>
                 <a href="index.php?route=medicos" class="menu-item<?= $act('medicos') ?>"><span>○ Listado de médicos</span></a>
@@ -61,13 +61,13 @@ $esMedico = Permisos::esMedico();
             <a href="index.php?route=especialidades" class="menu-item<?= $act('especialidades') ?>"><span class="icon">🩺</span><span>Especialidades</span></a>
         <?php endif; ?>
 
-        <?php if (Permisos::tiene('horarios.ver')): ?>
+        <?php if (Permisos::tiene(['horarios.ver', 'horarios.ver_propios'])): ?>
             <a href="index.php?route=horarios" class="menu-item<?= $grupo('horarios') ? ' active' : '' ?>"><span class="icon">📅</span><span><?= $esMedico ? 'Mi horario' : 'Horarios de Atención' ?></span></a>
         <?php endif; ?>
 
         <?php if (Permisos::tiene('citas.ver')): ?>
             <a href="index.php?route=citas" class="menu-item<?= $grupo('citas') ? ' active' : '' ?>"><span class="icon">📋</span><span><?= $esMedico ? 'Mi agenda' : (Permisos::esPaciente() ? 'Mis citas' : 'Citas Médicas') ?></span></a>
-            <?php if ($grupo('citas') && Permisos::tiene('citas.crear')): ?>
+            <?php if ($grupo('citas') && Permisos::tiene('citas.reservar')): ?>
             <div class="submenu">
                 <a href="index.php?route=citas_crear" class="menu-item<?= $act('citas_crear') ?>"><span>○ Programar cita</span></a>
                 <a href="index.php?route=citas" class="menu-item<?= $act('citas') ?>"><span>○ Listado de citas</span></a>
@@ -79,7 +79,7 @@ $esMedico = Permisos::esMedico();
             <a href="index.php?route=historial" class="menu-item<?= $act('historial') ?>"><span class="icon">📁</span><span>Historial de Citas</span></a>
         <?php endif; ?>
 
-        <?php if (Permisos::tiene('configuraciones')): ?>
+        <?php if (Permisos::tiene('config.sistema')): ?>
             <a href="index.php?route=configuraciones" class="menu-item<?= $act('configuraciones') ?>"><span class="icon">⚙️</span><span>Configuración</span></a>
         <?php endif; ?>
 

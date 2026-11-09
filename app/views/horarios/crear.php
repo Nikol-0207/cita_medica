@@ -94,12 +94,13 @@ $v   = fn($k) => htmlspecialchars($old[$k] ?? '');
                             </div>
 
                             <div class="campo col-6">
-                                <label for="fecha_fin">Disponible hasta *</label>
-                                <input type="date" id="fecha_fin" name="fecha_fin" required
+                                <label for="fecha_fin">Disponible hasta</label>
+                                <input type="date" id="fecha_fin" name="fecha_fin"
                                        min="<?= date('Y-m-d') ?>"
                                        value="<?= htmlspecialchars($old['fecha_fin'] ?? date('Y-m-d', strtotime('+30 days'))) ?>">
-                                <p class="hint">Hasta esta fecha se podrán programar citas en este horario;
-                                    cada semana que caiga dentro del rango tendrá sus propias fichas.</p>
+                                <p class="hint">Opcional: si lo deja vacío, el horario queda <strong>sin vencimiento</strong>.
+                                    Si pone una fecha, hasta ella se podrán programar citas y cada semana
+                                    dentro del rango tendrá sus propias fichas.</p>
                             </div>
 
                         </div>

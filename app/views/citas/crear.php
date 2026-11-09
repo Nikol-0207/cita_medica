@@ -51,11 +51,11 @@ foreach ($pacientes as $p) {
             --bg-main: <?= htmlspecialchars($colores['bg_main'] ?? '#F8FAFC') ?>;
         }
         .sidebar { background-color: var(--sidebar-bg) !important; }
-        .badge-programada   { background: #DBEAFE; color: #1E3A8A; }
+        .badge-pendiente   { background: #DBEAFE; color: #1E3A8A; }
         .badge-confirmada   { background: #CCFBF1; color: #115E59; }
         .badge-atendida     { background: #DCFCE7; color: #166534; }
         .badge-cancelada    { background: #FFE4E6; color: #9F1239; }
-        .badge-inasistencia { background: #FEF3C7; color: #92400E; }
+        .badge-no-asistio   { background: #FEF3C7; color: #92400E; }
 
         .fichas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
         .ficha {
@@ -153,7 +153,7 @@ foreach ($pacientes as $p) {
                                             · <?= htmlspecialchars(mb_strtoupper($h['dia_semana'])) ?>
                                             <?= substr($h['hora_inicio'], 0, 5) ?>-<?= substr($h['hora_fin'], 0, 5) ?>
                                             · <?= (int)$h['cantidad_fichas'] ?> fichas
-                                            · hasta <?= date('d/m/Y', strtotime($h['fecha_fin'])) ?>
+                                            · <?= !empty($h['fecha_fin']) ? 'hasta ' . date('d/m/Y', strtotime($h['fecha_fin'])) : 'sin vencimiento' ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
@@ -169,7 +169,11 @@ foreach ($pacientes as $p) {
                                 <?php if ($horario): ?>
                                     <p class="hint">
                                         Debe ser un/a <?= htmlspecialchars($horario['dia_semana']) ?> (día del horario)
-                                        y hasta el <?= date('d/m/Y', strtotime($horario['fecha_fin'])) ?>.
+                                        <?php if (!empty($horario['fecha_fin'])): ?>
+                                            y hasta el <?= date('d/m/Y', strtotime($horario['fecha_fin'])) ?>.
+                                        <?php else: ?>
+                                            (este horario no tiene fecha límite).
+                                        <?php endif; ?>
                                         Cada fecha tiene sus propias fichas.
                                     </p>
                                 <?php endif; ?>
@@ -250,7 +254,7 @@ foreach ($pacientes as $p) {
                                             <div class="ficha-hora"><?= $f['inicio'] ?> - <?= $f['fin'] ?></div>
 
                                             <?php if ($f['ocupada']): ?>
-                                                <span class="badge-estado badge-<?= str_replace(' ', '-', mb_strtolower($f['estado'])) ?>">
+                                                <span class="badge-estado badge-<?= str_replace(' ', '-', strtr(mb_strtolower($f['estado']), ['á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u','ñ'=>'n'])) ?>">
                                                     <?= htmlspecialchars($f['estado']) ?>
                                                 </span>
                                                 <div class="ficha-meta">Ficha no disponible</div>

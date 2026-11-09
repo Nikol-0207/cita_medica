@@ -57,7 +57,7 @@
                                 <a href="index.php?route=medicos" class="link-volver">Quitar filtro</a>
                             <?php endif; ?>
                         </form>
-                        <?php if (Permisos::tiene('medicos.crear')): ?>
+                        <?php if (Permisos::tiene('medicos.gestionar')): ?>
                      <a href="index.php?route=medicos_crear" class="btn btn-main">+ Nuevo médico</a>
                     <?php endif; ?>
                     </div>

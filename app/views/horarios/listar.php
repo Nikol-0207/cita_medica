@@ -148,7 +148,11 @@ $f = fn($k) => htmlspecialchars($filtros[$k] ?? '', ENT_QUOTES);
                                         </td>
                                         <td>
                                             <span class="<?= $vencido ? 'vigencia-vencida' : '' ?>">
-                                                <?= $vencido ? 'Vencido' : date('d/m/Y', strtotime($h['fecha_fin'])) ?>
+                                                <?= $vencido
+                                                    ? 'Vencido'
+                                                    : (!empty($h['fecha_fin'])
+                                                        ? date('d/m/Y', strtotime($h['fecha_fin']))
+                                                        : 'Sin vencimiento') ?>
                                             </span>
                                         </td>
                                         <td>

@@ -20,16 +20,37 @@ class AdminController {
 
         // Totales para los widgets (se cuentan personas reales, no cuentas de usuario:
         // había cuentas de prueba con el rol Recepcionista sin recepcionista asociada).
+        // En el nuevo modelo no existen las tablas recepcionista ni estado en
+        // medico/paciente: todo vive en persona y la especialización.
         $totales = [
-            'recepcionistas' => (int)($this->db->query("SELECT COUNT(*) FROM recepcionista WHERE estado = 'Activo'")->fetchColumn() ?: 0),
-            'pacientes'      => (int)($this->db->query("SELECT COUNT(*) FROM paciente WHERE estado = 'Activo'")->fetchColumn() ?: 0),
-            'medicos'        => (int)($this->db->query("SELECT COUNT(*) FROM medico WHERE estado = 'Activo'")->fetchColumn() ?: 0),
+            'recepcionistas' => (int)($this->db->query(
+                "SELECT COUNT(*) FROM cuenta_usuario u
+                 JOIN rol r ON r.id_rol = u.id_rol
+                 JOIN persona p ON p.id_persona = u.id_persona
+                 WHERE r.nombre ILIKE 'recepc%' AND p.estado = 'Activo'"
+            )->fetchColumn() ?: 0),
+            'pacientes'      => (int)($this->db->query(
+                "SELECT COUNT(*) FROM paciente pa
+                 JOIN persona p ON p.id_persona = pa.id_persona
+                 WHERE p.estado = 'Activo'"
+            )->fetchColumn() ?: 0),
+            'medicos'        => (int)($this->db->query(
+                "SELECT COUNT(*) FROM medico m
+                 JOIN persona p ON p.id_persona = m.id_persona
+                 WHERE p.estado = 'Activo'"
+            )->fetchColumn() ?: 0),
             'especialidades' => (int)($this->db->query("SELECT COUNT(*) FROM especialidades WHERE estado = 'Activo'")->fetchColumn() ?: 0),
             'horarios'       => (int)($this->db->query("SELECT COUNT(*) FROM horario_atencion WHERE estado = 'Activo'")->fetchColumn() ?: 0),
             'citas'          => (int)($this->db->query("SELECT COUNT(*) FROM cita WHERE estado NOT IN ('Cancelada')")->fetchColumn() ?: 0),
         ];
 
-        $medicos = $this->db->query("SELECT id_medico, nombres, apellidos FROM medico WHERE estado = 'Activo' ORDER BY apellidos")->fetchAll();
+        $medicos = $this->db->query(
+            "SELECT m.id_medico, p.nombres, p.apellidos
+             FROM medico m
+             JOIN persona p ON p.id_persona = m.id_persona
+             WHERE p.estado = 'Activo'
+             ORDER BY p.apellidos"
+        )->fetchAll();
 
         // --- Calendario de atención: filtros por especialidad y por médico ---
         require_once __DIR__ . '/../models/Horario.php';
@@ -63,7 +84,7 @@ class AdminController {
     }
 
     public function configuraciones() {
-        Permisos::exigir('configuraciones');
+        Permisos::exigir('config.sistema');
 
         $mensaje = null;
 

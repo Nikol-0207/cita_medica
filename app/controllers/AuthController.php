@@ -59,7 +59,7 @@ class AuthController {
 
         // Datos personales según el rol. El paciente solo ve/edita sus datos
         // personales (no información médica ni contacto de emergencia); el
-        // recepcionista edita su ficha; el médico solo celular y correo.
+        // recepcionista edita su ficha; el médico solo su celular.
         $datosPersonales = null;
         $tipoPerfil      = null;
 
@@ -213,23 +213,21 @@ class AuthController {
                 $modelo = new Medico();
 
                 $telefono = trim($_POST['medico_telefono'] ?? '');
-                $correo   = trim($_POST['medico_correo'] ?? '');
 
                 if (!$modelo->datosDeCuenta($id)) {
                     $errores[] = "Su cuenta no tiene una ficha de médico vinculada.";
                 } else {
+                    // Solo el celular: el correo es único en persona y se
+                    // edita desde la ficha del médico (datos de la cuenta).
                     if ($telefono === '') {
                         $errores[] = "El celular no puede estar vacío.";
-                    }
-                    if ($correo === '') {
-                        $errores[] = "El correo no puede estar vacío.";
-                    } elseif (!filter_var($correo, FILTER_VALIDATE_EMAIL)) {
-                        $errores[] = "El correo electrónico no es válido.";
+                    } elseif (!preg_match('/^\+?[0-9]{7,15}$/', $telefono)) {
+                        $errores[] = "El celular no es válido (solo números, 7 a 15 dígitos).";
                     }
 
                     if (!$errores) {
-                        $modelo->actualizarContacto($id, $telefono, $correo);
-                        $_SESSION['mensaje_exito'] = "Celular y correo actualizados correctamente.";
+                        $modelo->actualizarContacto($id, $telefono);
+                        $_SESSION['mensaje_exito'] = "Celular actualizado correctamente.";
                     }
                 }
 

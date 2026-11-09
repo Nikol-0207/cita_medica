@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../helpers/Permisos.php';
+require_once __DIR__ . '/../helpers/ErroresBD.php';
 require_once __DIR__ . '/../models/Horario.php';
 require_once __DIR__ . '/../models/Medico.php';
 require_once __DIR__ . '/../models/Configuracion.php';
@@ -16,7 +17,8 @@ class HorarioController {
      * por especialidad o doctor, y el médico solo ve los suyos.
      */
     public function listar() {
-        Permisos::exigir('horarios.ver');
+        // El médico solo trae horarios.ver_propios en el seed; por eso es any-of.
+        Permisos::exigir(['horarios.ver', 'horarios.ver_propios']);
 
         $esMedico      = Permisos::esMedico();
         $esPaciente    = Permisos::esPaciente();
@@ -129,12 +131,16 @@ class HorarioController {
             $errores[] = "La duración de la cita debe estar entre 5 y 240 minutos.";
         }
 
-        // --- Hasta qué fecha estará disponible el horario ---
-        $fFin = DateTime::createFromFormat('Y-m-d', $fechaFin);
-        if (!$fechaFin || !$fFin || $fFin->format('Y-m-d') !== $fechaFin) {
-            $errores[] = "Indica hasta qué fecha estará disponible el horario.";
-        } elseif ($fechaFin < date('Y-m-d')) {
-            $errores[] = "La fecha límite del horario no puede ser pasada.";
+        // --- Hasta qué fecha estará disponible el horario (opcional:
+        //     vacío = sin vencimiento, la BD lo guarda como NULL) ---
+        $fFin = null;
+        if ($fechaFin !== '') {
+            $fFin = DateTime::createFromFormat('Y-m-d', $fechaFin);
+            if (!$fFin || $fFin->format('Y-m-d') !== $fechaFin) {
+                $errores[] = "La fecha límite del horario no es válida.";
+            } elseif ($fechaFin < date('Y-m-d')) {
+                $errores[] = "La fecha límite del horario no puede ser pasada.";
+            }
         }
 
         // --- Reglas de negocio (solo si lo básico está bien) ---
@@ -168,7 +174,7 @@ class HorarioController {
             $_SESSION['mensaje_exito'] = "Horario registrado correctamente.";
         } catch (Throwable $e) {
             error_log($e->getMessage());
-            $_SESSION['mensaje_error'] = "No se pudo registrar el horario: " . $e->getMessage();
+            $_SESSION['mensaje_error'] = "No se pudo registrar el horario: " . ErroresBD::mensaje($e);
             $_SESSION['old'] = $old;
             header("Location: index.php?route=horarios_crear");
             exit;

@@ -7,7 +7,13 @@ $puedeCrear      = $puedeCrear ?? false;
 $puedeConfirmar  = $puedeConfirmar ?? false;
 $puedeCancelar   = $puedeCancelar ?? false;
 $titulo      = $esMedico ? 'Mi agenda' : ($esPaciente ? 'Mis citas' : 'Citas médicas');
-$claseEstado = fn($e) => 'badge-estado badge-' . str_replace(' ', '-', mb_strtolower($e));
+$claseEstado = function ($e) {
+    // "No asistió" -> badge-no-asistio (sin tildes, para que la clase CSS exista)
+    $e = strtr(mb_strtolower((string)$e), [
+        'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
+    ]);
+    return 'badge-estado badge-' . str_replace(' ', '-', $e);
+};
 $f           = fn($k) => htmlspecialchars($filtros[$k] ?? '', ENT_QUOTES);
 ?>
 <!DOCTYPE html>
@@ -25,11 +31,11 @@ $f           = fn($k) => htmlspecialchars($filtros[$k] ?? '', ENT_QUOTES);
             --bg-main: <?= htmlspecialchars($colores['bg_main'] ?? '#F8FAFC') ?>;
         }
         .sidebar { background-color: var(--sidebar-bg) !important; }
-        .badge-programada   { background: #DBEAFE; color: #1E3A8A; }
+        .badge-pendiente   { background: #DBEAFE; color: #1E3A8A; }
         .badge-confirmada   { background: #CCFBF1; color: #115E59; }
         .badge-atendida     { background: #DCFCE7; color: #166534; }
         .badge-cancelada    { background: #FFE4E6; color: #9F1239; }
-        .badge-inasistencia { background: #FEF3C7; color: #92400E; }
+        .badge-no-asistio   { background: #FEF3C7; color: #92400E; }
         .filtro-busqueda { display: flex; gap: 6px; align-items: center; }
         .filtro-busqueda input[type="text"] {
             padding: 7px 10px; border: 1px solid #D1D5DB; border-radius: 6px; font-size: 13px; min-width: 190px;
@@ -173,21 +179,21 @@ $f           = fn($k) => htmlspecialchars($filtros[$k] ?? '', ENT_QUOTES);
                                         <td>
                                             <?php
                                                 $estado = $c['estado'];
-                                                $muestraConfirmar = $puedeConfirmar && $estado === 'Programada' && !$yaEmpezo;
+                                                $muestraConfirmar = $puedeConfirmar && $estado === 'Pendiente' && !$yaEmpezo;
                                                 $muestraCancelar  = $puedeCancelar && !$yaEmpezo
-                                                    && in_array($estado, ['Programada', 'Confirmada'], true);
+                                                    && in_array($estado, ['Pendiente', 'Confirmada'], true);
 
                                                 // El médico marca Atendida desde Confirmada o corrige
-                                                // una Inasistencia de un paciente que sí llegó.
+                                                // un «No asistió» de un paciente que sí llegó.
                                                 $muestraAtender = $esMedico && $yaEmpezo
-                                                    && in_array($estado, ['Confirmada', 'Inasistencia'], true);
+                                                    && in_array($estado, ['Confirmada', 'No asistió'], true);
 
-                                                // Inasistencia: el médico en sus citas vencidas sin
+                                                // «No asistió»: el médico en sus citas vencidas sin
                                                 // atención; el personal administrativo cuando el
-                                                // paciente no canceló ni confirmó (seguía Programada).
+                                                // paciente no canceló ni confirmó (seguía Pendiente).
                                                 $muestraInasistencia = $yaEmpezo && (
-                                                    ($esMedico && in_array($estado, ['Programada', 'Confirmada'], true))
-                                                    || ($esStaff && $estado === 'Programada')
+                                                    ($esMedico && in_array($estado, ['Pendiente', 'Confirmada'], true))
+                                                    || ($esStaff && $estado === 'Pendiente')
                                                 );
                                             ?>
                                             <?php if ($muestraConfirmar): ?>
@@ -208,9 +214,9 @@ $f           = fn($k) => htmlspecialchars($filtros[$k] ?? '', ENT_QUOTES);
 
                                             <?php if ($muestraInasistencia): ?>
                                                 <form action="index.php?route=citas_inasistencia" method="POST" style="display:inline"
-                                                      onsubmit="return confirm('¿Marcar la cita <?= htmlspecialchars($c['codigo']) ?> como Inasistencia?');">
+                                                      onsubmit="return confirm('¿Marcar la cita <?= htmlspecialchars($c['codigo']) ?> como «No asistió»?');">
                                                     <input type="hidden" name="id_cita" value="<?= (int)$c['id_cita'] ?>">
-                                                    <button type="submit" class="btn btn-inasistencia" style="padding:5px 10px;font-size:12px">Inasistencia</button>
+                                                    <button type="submit" class="btn btn-inasistencia" style="padding:5px 10px;font-size:12px">No asistió</button>
                                                 </form>
                                             <?php endif; ?>
 

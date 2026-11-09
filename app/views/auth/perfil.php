@@ -190,7 +190,8 @@ $fechaNac        = !empty($dp['fecha_nacimiento']) ? substr((string)$dp['fecha_n
         <?php endif; ?>
 
         <?php if (!empty($datosMedico)): ?>
-        <!-- Datos del médico: solo celular y correo son editables -->
+        <!-- Datos del médico: solo el celular es editable (el correo es único
+             en persona y se gestiona desde la ficha del médico) -->
         <div class="panel-box">
             <div class="panel-header"><h4>Datos personales y profesionales</h4></div>
             <div class="panel-body">
@@ -219,13 +220,13 @@ $fechaNac        = !empty($dp['fecha_nacimiento']) ? substr((string)$dp['fecha_n
                                    value="<?= htmlspecialchars($datosMedico['telefono'] ?? '') ?>">
                         </div>
                         <div class="campo col-6">
-                            <label for="medico_correo">Correo de contacto *</label>
-                            <input type="email" id="medico_correo" name="medico_correo" required
+                            <label>Correo de contacto</label>
+                            <input type="text" readonly
                                    value="<?= htmlspecialchars($datosMedico['correo'] ?? '') ?>">
                         </div>
                     </div>
-                    <p class="hint">Solo puede actualizar su celular y correo de contacto. Para el correo de inicio de sesión use «Datos de la cuenta». El resto de sus datos profesionales los administra el personal administrativo.</p>
-                    <button type="submit" class="btn btn-main">Guardar celular y correo</button>
+                    <p class="hint">Solo puede actualizar su celular. El resto de sus datos (correo, especialidades, registro) los administra el personal administrativo desde la ficha del médico.</p>
+                    <button type="submit" class="btn btn-main">Guardar celular</button>
                 </form>
             </div>
         </div>

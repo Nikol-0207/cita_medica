@@ -119,6 +119,9 @@ class MedicoController {
         if (!$errores && $this->model->existeRegistroDeOtro($d['registro_profesional'], $id)) {
             $errores[] = "Ya existe otro médico con ese registro profesional.";
         }
+        if (!$errores && $d['correo'] !== '' && $this->model->existeCorreoDeOtro($d['correo'], $id)) {
+            $errores[] = "Ya existe otra persona con ese correo electrónico.";
+        }
 
         if ($errores) {
             $_SESSION['mensaje_error'] = implode(' ', $errores);
@@ -171,7 +174,7 @@ class MedicoController {
     }
 
     public function crear() {
-        Permisos::exigir('medicos.crear');
+        Permisos::exigir('medicos.gestionar');
 
         $colores        = (new Configuracion())->getColoresPersonalizados();
         $especialidades = $this->model->especialidadesActivas();
@@ -183,7 +186,7 @@ class MedicoController {
     }
 
     public function guardar() {
-        Permisos::exigir('medicos.crear');
+        Permisos::exigir('medicos.gestionar');
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             header("Location: index.php?route=medicos_crear");
             exit;
@@ -192,6 +195,7 @@ class MedicoController {
         $d = [
             'nombres'              => trim($_POST['nombres'] ?? ''),
             'apellidos'            => trim($_POST['apellidos'] ?? ''),
+            'ci'                   => trim($_POST['ci'] ?? ''),
             'registro_profesional' => trim($_POST['registro_profesional'] ?? ''),
             'telefono'             => trim($_POST['telefono'] ?? ''),
             'usuario_nombre'       => trim($_POST['usuario_nombre'] ?? ''),
@@ -212,6 +216,13 @@ class MedicoController {
             if ($d[$campo] === '') {
                 $errores[] = "El campo $etiqueta es obligatorio.";
             }
+        }
+
+        // El CI es obligatorio y único en persona.
+        if ($d['ci'] === '') {
+            $errores[] = "El campo CI es obligatorio.";
+        } elseif (!preg_match('/^[0-9A-Za-z-]{5,20}$/', $d['ci'])) {
+            $errores[] = "El CI no es válido.";
         }
 
         if (!preg_match('/^\+?[0-9]{7,15}$/', $d['telefono'])) {
@@ -242,6 +253,9 @@ class MedicoController {
         if (!$errores) {
             if ($d['registro_profesional'] !== '' && $this->model->existeRegistro($d['registro_profesional'])) {
                 $errores[] = "Ya existe un médico con ese registro profesional.";
+            }
+            if ($this->model->existeCi($d['ci'])) {
+                $errores[] = "Ya existe una persona con ese CI.";
             }
             if ($this->model->existeNombreCuenta($d['usuario_nombre'])) {
                 $errores[] = "Ese nombre de usuario ya está en uso.";

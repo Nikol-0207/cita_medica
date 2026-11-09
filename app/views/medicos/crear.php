@@ -53,6 +53,14 @@ $marcadas = array_map('intval', $old['especialidades'] ?? []);
                                 <input type="text" id="apellidos" name="apellidos" required value="<?= $v('apellidos') ?>">
                             </div>
                             <div class="campo col-3">
+                                <label for="ci">CI *</label>
+                                <input type="text" id="ci" name="ci" required
+                                       pattern="[0-9A-Za-z-]{5,20}"
+                                       title="Entre 5 y 20 caracteres (números, letras o guion)"
+                                       value="<?= $v('ci') ?>">
+                                <p class="hint">Carnet de identidad: es único en el sistema.</p>
+                            </div>
+                            <div class="campo col-3">
                                 <label for="registro_profesional">Registro profesional *</label>
                                 <input type="text" id="registro_profesional" name="registro_profesional" required value="<?= $v('registro_profesional') ?>">
                             </div>

@@ -91,6 +91,12 @@ $fechaLegible = function ($fecha) {
                             </div>
 
                             <div class="campo col-4">
+                                <label>CI</label>
+                                <input type="text" readonly
+                                       value="<?= htmlspecialchars($medico['ci'] ?? '') ?>">
+                                <p class="hint">Carnet de identidad: único, se gestiona en la ficha de la persona.</p>
+                            </div>
+                            <div class="campo col-4">
                                 <label for="registro_profesional">Registro profesional *</label>
                                 <input type="text" id="registro_profesional" name="registro_profesional" required
                                        value="<?= $v('registro_profesional', $medico['registro_profesional']) ?>">
@@ -136,23 +142,6 @@ $fechaLegible = function ($fecha) {
                     </div>
                 </div>
             </form>
-
-            <?php if (!empty($medico['correo_cuenta'])): ?>
-            <div class="panel-box panel-azul">
-                <div class="panel-header"><h4>Cuenta de acceso</h4></div>
-                <div class="panel-body">
-                    <div class="form-grid">
-                        <div class="campo col-6">
-                            <label>Correo de inicio de sesión</label>
-                            <input type="text" readonly value="<?= htmlspecialchars($medico['correo_cuenta']) ?>">
-                        </div>
-                        <div class="campo col-12">
-                            <p class="hint">El usuario y el correo de inicio de sesión se administran por separado de los datos profesionales.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <?php endif; ?>
         </div>
     </main>
 </div>

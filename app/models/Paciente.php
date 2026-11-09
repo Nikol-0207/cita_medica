@@ -9,14 +9,25 @@ class Paciente {
     }
 
     public function existeCi($ci) {
-        $stmt = $this->db->prepare("SELECT 1 FROM paciente WHERE ci = :ci LIMIT 1");
+        $stmt = $this->db->prepare("SELECT 1 FROM persona WHERE ci = :ci LIMIT 1");
         $stmt->execute([':ci' => $ci]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    public function existeCorreo($correo) {
+        $stmt = $this->db->prepare("SELECT 1 FROM persona WHERE LOWER(correo) = LOWER(:c) LIMIT 1");
+        $stmt->execute([':c' => $correo]);
         return (bool)$stmt->fetchColumn();
     }
 
     /** Id del paciente vinculado a una cuenta de usuario (0 si no está vinculado). */
     public function idDeCuenta($idCuenta) {
-        $stmt = $this->db->prepare("SELECT id_paciente FROM paciente WHERE id_cuenta_usuario = :id");
+        $stmt = $this->db->prepare(
+            "SELECT pa.id_paciente
+             FROM cuenta_usuario u
+             JOIN paciente pa ON pa.id_persona = u.id_persona
+             WHERE u.id_cuenta_usuario = :id"
+        );
         $stmt->execute([':id' => (int)$idCuenta]);
         return (int)$stmt->fetchColumn();
     }
@@ -28,22 +39,26 @@ class Paciente {
      */
     public function datosDeCuenta($idCuenta) {
         $stmt = $this->db->prepare(
-            "SELECT id_paciente, codigo, nombres, apellidos, ci, fecha_nacimiento,
-                    sexo, telefono, correo, direccion, nro_seguro, estado
-             FROM paciente
-             WHERE id_cuenta_usuario = :id"
+            "SELECT pa.id_paciente, pa.codigo, p.nombres, p.apellidos, p.ci,
+                    p.fecha_nacimiento, p.sexo, p.telefono, p.correo, p.direccion,
+                    pa.nro_seguro, p.estado
+             FROM cuenta_usuario u
+             JOIN persona p   ON p.id_persona = u.id_persona
+             JOIN paciente pa ON pa.id_persona = p.id_persona
+             WHERE u.id_cuenta_usuario = :id"
         );
         $stmt->execute([':id' => (int)$idCuenta]);
         $fila = $stmt->fetch();
         return $fila ?: null;
     }
 
-    /** ¿Otro paciente ya usa ese CI? (se excluye la ficha de la cuenta actual). */
+    /** ¿Otra persona ya usa ese CI? (se excluye la de la cuenta actual). */
     public function existeCiDeOtro($ci, $idCuenta) {
         $stmt = $this->db->prepare(
-            "SELECT 1 FROM paciente
-             WHERE ci = :ci
-               AND id_cuenta_usuario IS DISTINCT FROM :id
+            "SELECT 1 FROM persona p
+             JOIN cuenta_usuario u ON u.id_persona = p.id_persona
+             WHERE p.ci = :ci
+               AND u.id_cuenta_usuario IS DISTINCT FROM :id
              LIMIT 1"
         );
         $stmt->execute([':ci' => $ci, ':id' => (int)$idCuenta]);
@@ -52,30 +67,46 @@ class Paciente {
 
     /** Actualiza solo los datos personales de la ficha del paciente. */
     public function actualizarDatos($idCuenta, array $d) {
-        $stmt = $this->db->prepare(
-            "UPDATE paciente
-                SET nombres = :nombres,
-                    apellidos = :apellidos,
-                    ci = :ci,
-                    fecha_nacimiento = :fecha,
-                    sexo = :sexo,
-                    telefono = :telefono,
-                    direccion = :direccion,
-                    nro_seguro = :seguro
-              WHERE id_cuenta_usuario = :id"
-        );
-        $stmt->execute([
-            ':nombres'   => $d['nombres'],
-            ':apellidos' => $d['apellidos'],
-            ':ci'        => $d['ci'],
-            ':fecha'     => $d['fecha_nacimiento'],
-            ':sexo'      => $d['sexo'],
-            ':telefono'  => $d['telefono'],
-            ':direccion' => $d['direccion'],
-            ':seguro'    => $d['nro_seguro'],
-            ':id'        => (int)$idCuenta,
-        ]);
-        return $stmt->rowCount();
+        $this->db->beginTransaction();
+        try {
+            $this->db->prepare(
+                "UPDATE persona
+                    SET nombres = :nombres,
+                        apellidos = :apellidos,
+                        ci = :ci,
+                        fecha_nacimiento = :fecha,
+                        sexo = :sexo,
+                        telefono = :telefono,
+                        direccion = :direccion
+                  WHERE id_persona = (SELECT id_persona FROM cuenta_usuario WHERE id_cuenta_usuario = :id)"
+            )->execute([
+                ':nombres'   => $d['nombres'],
+                ':apellidos' => $d['apellidos'],
+                ':ci'        => $d['ci'],
+                ':fecha'     => $d['fecha_nacimiento'],
+                ':sexo'      => $d['sexo'],
+                ':telefono'  => $d['telefono'],
+                ':direccion' => $d['direccion'],
+                ':id'        => (int)$idCuenta,
+            ]);
+
+            $this->db->prepare(
+                "UPDATE paciente
+                    SET nro_seguro = :seguro
+                  WHERE id_persona = (SELECT id_persona FROM cuenta_usuario WHERE id_cuenta_usuario = :id)"
+            )->execute([
+                ':seguro' => ($d['nro_seguro'] ?? '') !== '' ? $d['nro_seguro'] : null,
+                ':id'     => (int)$idCuenta,
+            ]);
+
+            $this->db->commit();
+            return true;
+        } catch (Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /**
@@ -84,21 +115,24 @@ class Paciente {
      */
     public function obtenerDetalle($idPaciente) {
         $stmt = $this->db->prepare(
-            "SELECT p.id_paciente, p.id_cuenta_usuario, p.codigo, p.nombres, p.apellidos,
-                    p.ci, p.fecha_nacimiento, p.sexo, p.telefono, p.correo, p.direccion,
-                    p.nro_seguro, p.observaciones, p.estado, p.fecha_registro,
-                    u.nombre AS usuario, u.correo AS correo_cuenta,
+            "SELECT pa.id_paciente, u.id_cuenta_usuario, pa.codigo,
+                    p.nombres, p.apellidos, p.ci, p.fecha_nacimiento, p.sexo,
+                    p.telefono, p.correo, p.direccion, p.estado, p.fecha_registro,
+                    pa.nro_seguro, pa.observaciones,
+                    u.nombre_usuario AS usuario,
+                    p.correo AS correo_cuenta,
                     (SELECT im.tipo_sangre FROM informacion_medica im
-                      WHERE im.id_paciente = p.id_paciente
+                      WHERE im.id_paciente = pa.id_paciente
                       ORDER BY im.fecha_actualizacion DESC NULLS LAST LIMIT 1) AS tipo_sangre,
                     (SELECT im.alergias FROM informacion_medica im
-                      WHERE im.id_paciente = p.id_paciente
+                      WHERE im.id_paciente = pa.id_paciente
                       ORDER BY im.fecha_actualizacion DESC NULLS LAST LIMIT 1) AS alergias,
                     (SELECT MAX(im.fecha_actualizacion) FROM informacion_medica im
-                      WHERE im.id_paciente = p.id_paciente) AS fecha_actualizacion_medica
-             FROM paciente p
-             LEFT JOIN cuenta_usuario u ON u.id_cuenta_usuario = p.id_cuenta_usuario
-             WHERE p.id_paciente = :id
+                      WHERE im.id_paciente = pa.id_paciente) AS fecha_actualizacion_medica
+             FROM paciente pa
+             JOIN persona p ON p.id_persona = pa.id_persona
+             LEFT JOIN cuenta_usuario u ON u.id_persona = p.id_persona
+             WHERE pa.id_paciente = :id
              LIMIT 1"
         );
         $stmt->execute([':id' => (int)$idPaciente]);
@@ -131,15 +165,29 @@ class Paciente {
         return (bool)$stmt->fetchColumn();
     }
 
-    /** ¿Otro paciente ya usa ese CI? (excluye la ficha que se está editando). */
+    /** ¿Otra persona ya usa ese CI? (excluye la ficha que se está editando). */
     public function existeCiDeOtroPaciente($ci, $idPaciente) {
         $stmt = $this->db->prepare(
-            "SELECT 1 FROM paciente
-             WHERE ci = :ci
-               AND id_paciente IS DISTINCT FROM :id
+            "SELECT 1 FROM persona p
+             JOIN paciente pa ON pa.id_persona = p.id_persona
+             WHERE p.ci = :ci
+               AND pa.id_paciente IS DISTINCT FROM :id
              LIMIT 1"
         );
         $stmt->execute([':ci' => $ci, ':id' => (int)$idPaciente]);
+        return (bool)$stmt->fetchColumn();
+    }
+
+    /** ¿Otra persona ya usa ese correo? (excluye la ficha que se está editando). */
+    public function existeCorreoDeOtroPaciente($correo, $idPaciente) {
+        $stmt = $this->db->prepare(
+            "SELECT 1 FROM persona p
+             JOIN paciente pa ON pa.id_persona = p.id_persona
+             WHERE LOWER(p.correo) = LOWER(:c)
+               AND pa.id_paciente IS DISTINCT FROM :id
+             LIMIT 1"
+        );
+        $stmt->execute([':c' => $correo, ':id' => (int)$idPaciente]);
         return (bool)$stmt->fetchColumn();
     }
 
@@ -153,7 +201,7 @@ class Paciente {
         $this->db->beginTransaction();
         try {
             $this->db->prepare(
-                "UPDATE paciente
+                "UPDATE persona
                     SET nombres = :nombres,
                         apellidos = :apellidos,
                         ci = :ci,
@@ -161,10 +209,8 @@ class Paciente {
                         sexo = :sexo,
                         telefono = :telefono,
                         correo = :correo,
-                        direccion = :direccion,
-                        nro_seguro = :seguro,
-                        observaciones = :obs
-                  WHERE id_paciente = :id"
+                        direccion = :direccion
+                  WHERE id_persona = (SELECT id_persona FROM paciente WHERE id_paciente = :id)"
             )->execute([
                 ':nombres'   => $d['nombres'],
                 ':apellidos' => $d['apellidos'],
@@ -174,9 +220,18 @@ class Paciente {
                 ':telefono'  => $d['telefono'],
                 ':correo'    => $nul($d['correo']),
                 ':direccion' => $d['direccion'],
-                ':seguro'    => $nul($d['nro_seguro']),
-                ':obs'       => $nul($d['observaciones']),
                 ':id'        => (int)$idPaciente,
+            ]);
+
+            $this->db->prepare(
+                "UPDATE paciente
+                    SET nro_seguro = :seguro,
+                        observaciones = :obs
+                  WHERE id_paciente = :id"
+            )->execute([
+                ':seguro' => $nul($d['nro_seguro']),
+                ':obs'    => $nul($d['observaciones']),
+                ':id'     => (int)$idPaciente,
             ]);
 
             // Información médica: se crea si el paciente aún no tenía ficha.
@@ -234,18 +289,20 @@ class Paciente {
     /** Pacientes activos para elegir en el formulario de nueva cita. */
     public function activos() {
         return $this->db->query(
-            "SELECT id_paciente, codigo, nombres, apellidos, ci
-             FROM paciente
-             WHERE estado = 'Activo'
-             ORDER BY apellidos, nombres"
+            "SELECT pa.id_paciente, pa.codigo, p.nombres, p.apellidos, p.ci
+             FROM paciente pa
+             JOIN persona p ON p.id_persona = pa.id_persona
+             WHERE p.estado = 'Activo'
+             ORDER BY p.apellidos, p.nombres"
         )->fetchAll();
     }
 
     public function listar() {
-        $sql = "SELECT p.id_paciente, p.codigo, p.nombres, p.apellidos, p.ci,
+        $sql = "SELECT pa.id_paciente, pa.codigo, p.nombres, p.apellidos, p.ci,
                        p.telefono, p.correo, p.estado, im.tipo_sangre
-                FROM paciente p
-                LEFT JOIN informacion_medica im ON im.id_paciente = p.id_paciente
+                FROM paciente pa
+                JOIN persona p ON p.id_persona = pa.id_persona
+                LEFT JOIN informacion_medica im ON im.id_paciente = pa.id_paciente
                 ORDER BY p.apellidos, p.nombres";
         return $this->db->query($sql)->fetchAll();
     }
@@ -256,17 +313,18 @@ class Paciente {
      * Cada placeholder se usa una sola vez (PDO con PostgreSQL no repite nombres).
      */
     public function listarDelMedico($idMedico) {
-        $sql = "SELECT p.id_paciente, p.codigo, p.nombres, p.apellidos, p.ci,
+        $sql = "SELECT pa.id_paciente, pa.codigo, p.nombres, p.apellidos, p.ci,
                        p.telefono, p.correo, p.estado, im.tipo_sangre,
                        (SELECT COUNT(*) FROM cita c
-                         WHERE c.id_paciente = p.id_paciente AND c.id_medico = :med1) AS total_citas,
+                         WHERE c.id_paciente = pa.id_paciente AND c.id_medico = :med1) AS total_citas,
                        (SELECT MIN(c.fecha) FROM cita c
-                         WHERE c.id_paciente = p.id_paciente AND c.id_medico = :med2
+                         WHERE c.id_paciente = pa.id_paciente AND c.id_medico = :med2
                            AND c.fecha >= CURRENT_DATE) AS proxima_fecha
-                FROM paciente p
-                LEFT JOIN informacion_medica im ON im.id_paciente = p.id_paciente
+                FROM paciente pa
+                JOIN persona p ON p.id_persona = pa.id_persona
+                LEFT JOIN informacion_medica im ON im.id_paciente = pa.id_paciente
                 WHERE EXISTS (SELECT 1 FROM cita c
-                               WHERE c.id_paciente = p.id_paciente AND c.id_medico = :med3)
+                               WHERE c.id_paciente = pa.id_paciente AND c.id_medico = :med3)
                 ORDER BY p.apellidos, p.nombres";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':med1' => (int)$idMedico, ':med2' => (int)$idMedico, ':med3' => (int)$idMedico]);
@@ -274,59 +332,35 @@ class Paciente {
     }
 
     public function existeCorreoCuenta($correo) {
-        $stmt = $this->db->prepare("SELECT 1 FROM cuenta_usuario WHERE LOWER(correo) = LOWER(:c) LIMIT 1");
+        $stmt = $this->db->prepare("SELECT 1 FROM persona WHERE LOWER(correo) = LOWER(:c) LIMIT 1");
         $stmt->execute([':c' => $correo]);
         return (bool)$stmt->fetchColumn();
     }
 
     public function existeNombreCuenta($nombre) {
-        $stmt = $this->db->prepare("SELECT 1 FROM cuenta_usuario WHERE LOWER(nombre) = LOWER(:n) LIMIT 1");
+        $stmt = $this->db->prepare("SELECT 1 FROM cuenta_usuario WHERE LOWER(nombre_usuario) = LOWER(:n) LIMIT 1");
         $stmt->execute([':n' => $nombre]);
         return (bool)$stmt->fetchColumn();
     }
 
     /**
-     * Crea paciente + información médica + contacto de emergencia en una transacción.
+     * Crea persona + (cuenta opcional) + paciente + información médica +
+     * contacto de emergencia en una transacción.
      */
     public function crear(array $d, $hash = null) {
     $nul = fn($x) => ($x !== '' && $x !== null) ? $x : null;
 
     $this->db->beginTransaction();
     try {
-        // --- Cuenta de usuario (opcional) ---
-        $idCuenta = null;
-        if ($hash !== null) {
-            $idRol = $this->db->query("SELECT id_rol FROM rol WHERE nombre ILIKE '%pacient%' LIMIT 1")->fetchColumn();
-            if (!$idRol) {
-                throw new RuntimeException('No existe el rol Paciente en la tabla rol.');
-            }
-            $stmt = $this->db->prepare(
-                "INSERT INTO cuenta_usuario (id_rol, nombre, correo, contraseña_hash)
-                 VALUES (:rol, :nombre, :correo, :hash)
-                 RETURNING id_cuenta_usuario"
-            );
-            $stmt->execute([
-                ':rol'    => $idRol,
-                ':nombre' => $d['usuario_nombre'],
-                ':correo' => $d['correo'],
-                ':hash'   => $hash,
-            ]);
-            $idCuenta = $stmt->fetchColumn();
-        }
-
-        // --- Paciente ---
-        $id = (int)$this->db->query("SELECT nextval(pg_get_serial_sequence('paciente', 'id_paciente'))")->fetchColumn();
-        $codigo = 'PAC-' . str_pad($id, 5, '0', STR_PAD_LEFT);
-
-        $this->db->prepare(
-            "INSERT INTO paciente (id_paciente, id_cuenta_usuario, codigo, ci, nombres, apellidos, fecha_nacimiento, sexo,
-                                   telefono, correo, direccion, nro_seguro, observaciones, estado, fecha_registro)
-             VALUES (:id, :cuenta, :codigo, :ci, :nombres, :apellidos, :fecha, :sexo,
-                     :telefono, :correo, :direccion, :seguro, :obs, 'Activo', NOW())"
-        )->execute([
-            ':id'        => $id,
-            ':cuenta'    => $idCuenta,
-            ':codigo'    => $codigo,
+        // --- Persona ---
+        $stmt = $this->db->prepare(
+            "INSERT INTO persona (ci, nombres, apellidos, fecha_nacimiento, sexo,
+                                  telefono, correo, direccion, estado)
+             VALUES (:ci, :nombres, :apellidos, :fecha, :sexo,
+                     :telefono, :correo, :direccion, 'Activo')
+             RETURNING id_persona"
+        );
+        $stmt->execute([
             ':ci'        => $d['ci'],
             ':nombres'   => $d['nombres'],
             ':apellidos' => $d['apellidos'],
@@ -335,8 +369,40 @@ class Paciente {
             ':telefono'  => $d['telefono'],
             ':correo'    => $nul($d['correo']),
             ':direccion' => $d['direccion'],
-            ':seguro'    => $nul($d['nro_seguro']),
-            ':obs'       => $nul($d['observaciones']),
+        ]);
+        $idPersona = (int)$stmt->fetchColumn();
+
+        // --- Cuenta de usuario (opcional) ---
+        if ($hash !== null) {
+            $idRol = $this->db->query("SELECT id_rol FROM rol WHERE nombre ILIKE '%pacient%' LIMIT 1")->fetchColumn();
+            if (!$idRol) {
+                throw new RuntimeException('No existe el rol Paciente en la tabla rol.');
+            }
+            $stmt = $this->db->prepare(
+                "INSERT INTO cuenta_usuario (id_persona, id_rol, nombre_usuario, contrasena_hash)
+                 VALUES (:persona, :rol, :usuario, :hash)"
+            );
+            $stmt->execute([
+                ':persona' => $idPersona,
+                ':rol'     => $idRol,
+                ':usuario' => $d['usuario_nombre'],
+                ':hash'    => $hash,
+            ]);
+        }
+
+        // --- Paciente ---
+        $id     = $this->nextId('paciente', 'id_paciente');
+        $codigo = 'PAC-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
+
+        $this->db->prepare(
+            "INSERT INTO paciente (id_paciente, id_persona, codigo, nro_seguro, observaciones)
+             VALUES (:id, :persona, :codigo, :seguro, :obs)"
+        )->execute([
+            ':id'      => $id,
+            ':persona' => $idPersona,
+            ':codigo'  => $codigo,
+            ':seguro'  => $nul($d['nro_seguro']),
+            ':obs'     => $nul($d['observaciones']),
         ]);
 
         // --- Información médica ---
@@ -371,4 +437,11 @@ class Paciente {
         throw $e;
     }
 }
+
+    /** Siguiente valor de una secuencia (para armar el código del paciente). */
+    private function nextId($tabla, $columna) {
+        return (int)$this->db->query(
+            "SELECT nextval(pg_get_serial_sequence('{$tabla}', '{$columna}'))"
+        )->fetchColumn();
+    }
 }

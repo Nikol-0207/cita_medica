@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../helpers/Permisos.php';
+require_once __DIR__ . '/../helpers/ErroresBD.php';
 require_once __DIR__ . '/../models/Cita.php';
 require_once __DIR__ . '/../models/Horario.php';
 require_once __DIR__ . '/../models/Medico.php';
@@ -59,7 +60,7 @@ class CitaController {
         require_once __DIR__ . '/../helpers/Paginador.php';
 
         // El paciente no puede cancelar una ficha cuya hora ya pasó: si seguía
-        // Programada, se marca Inasistencia al mostrarle su listado. El personal
+        // Pendiente, se marca «No asistió» al mostrarle su listado. El personal
         // y el médico conservan el botón para marcarla manualmente.
         // Si el trigger de la BD aún no está corregido, no se rompe el listado.
         if ($esPaciente && $paciente > 0) {
@@ -74,9 +75,9 @@ class CitaController {
         $citas        = $pag['items'];
         $medicos      = $this->model->medicosActivos();
         $estados      = Cita::estados();
-        $puedeCrear   = Permisos::tiene('citas.crear');
-        $puedeConfirmar = Permisos::tiene('citas.confirmar');
-        $puedeCancelar  = Permisos::tiene('citas.cancelar');
+        $puedeCrear   = Permisos::tiene('citas.reservar');
+        $puedeConfirmar = Permisos::tiene('citas.gestionar');
+        $puedeCancelar  = Permisos::tiene(['citas.gestionar', 'citas.reservar']);
         $mensajeExito = $_SESSION['mensaje_exito'] ?? null;
         $mensajeError = $_SESSION['mensaje_error'] ?? null;
         unset($_SESSION['mensaje_exito'], $_SESSION['mensaje_error']);
@@ -88,7 +89,7 @@ class CitaController {
     // NUEVA CITA: elección de horario, fecha y ficha
     // ----------------------------------------------------------------
     public function crear() {
-        Permisos::exigir('citas.crear');
+        Permisos::exigir('citas.reservar');
 
         $esPaciente  = Permisos::esPaciente();
         $colores     = (new Configuracion())->getColoresPersonalizados();
@@ -140,7 +141,7 @@ class CitaController {
     // REGISTRO (POST desde la ficha elegida)
     // ----------------------------------------------------------------
     public function guardar() {
-        Permisos::exigir('citas.crear');
+        Permisos::exigir('citas.reservar');
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             header("Location: index.php?route=citas_crear");
             exit;
@@ -181,9 +182,9 @@ class CitaController {
             }
         }
 
-        // --- Motivo ---
-        if (mb_strlen($motivo) > 500) {
-            $motivo = mb_substr($motivo, 0, 500);
+        // --- Motivo (la columna motivo de cita es VARCHAR(300)) ---
+        if (mb_strlen($motivo) > 300) {
+            $motivo = mb_substr($motivo, 0, 300);
         }
 
         // --- Paciente ---
@@ -224,6 +225,13 @@ class CitaController {
             }
         }
 
+        // --- Día bloqueado: se avisa aquí para no llegar al error del trigger
+        //     trg_validar_cita (fn_dia_bloqueado) ---
+        if ($horario && $fecha !== '' && $ini !== '' && $fin !== '' && !$errores
+            && $this->model->diaBloqueado($horario['id_medico'], $fecha, $ini, $fin)) {
+            $errores[] = "El médico no atiende en esa fecha (día bloqueado).";
+        }
+
         if ($errores) {
             $_SESSION['mensaje_error'] = implode(' ', $errores);
             header("Location: " . $volver);
@@ -235,15 +243,16 @@ class CitaController {
                 'id_horario'   => $horario['id_horario'],
                 'id_paciente'  => $idPaciente,
                 'id_medico'    => $horario['id_medico'],
+                'id_cuenta_registro' => (int)$_SESSION['user_id'],
                 'fecha'        => $fecha,
                 'hora_inicio'  => substr($ini, 0, 5) . ':00',
                 'hora_fin'     => substr($fin, 0, 5) . ':00',
                 'motivo'       => $motivo,
             ]);
-            $_SESSION['mensaje_exito'] = "Cita programada correctamente (estado: Programada).";
+            $_SESSION['mensaje_exito'] = "Cita reservada correctamente (estado: Pendiente).";
         } catch (Throwable $e) {
             error_log($e->getMessage());
-            $_SESSION['mensaje_error'] = "No se pudo programar la cita: " . $e->getMessage();
+            $_SESSION['mensaje_error'] = "No se pudo programar la cita: " . ErroresBD::mensaje($e);
         }
 
         header("Location: " . $volver);
@@ -254,17 +263,23 @@ class CitaController {
     // CONFIRMAR (solo admin y recepcionista)
     // ----------------------------------------------------------------
     public function confirmar() {
-        Permisos::exigir('citas.confirmar');
+        Permisos::exigir('citas.gestionar');
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             header("Location: index.php?route=citas");
             exit;
         }
 
         $id = (int)($_POST['id_cita'] ?? 0);
-        if ($id > 0 && $this->model->confirmar($id)) {
+        try {
+            $ok = $id > 0 && $this->model->confirmar($id);
+        } catch (Throwable $e) {
+            error_log($e->getMessage());
+            $ok = false;
+        }
+        if ($ok) {
             $_SESSION['mensaje_exito'] = "Cita confirmada correctamente.";
         } else {
-            $_SESSION['mensaje_error'] = "La cita no existe o no está en estado Programada.";
+            $_SESSION['mensaje_error'] = "La cita no existe o no está en estado Pendiente.";
         }
 
         header("Location: index.php?route=citas");
@@ -297,11 +312,11 @@ class CitaController {
                 $_SESSION['mensaje_exito'] = "La cita se marcó como Atendida.";
             } else {
                 $_SESSION['mensaje_error'] = "No se pudo marcar como Atendida: la cita no es suya, "
-                    . "no está Confirmada o en Inasistencia, o su hora aún no ha comenzado.";
+                    . "no está Confirmada o en «No asistió», o su hora aún no ha comenzado.";
             }
         } catch (Throwable $e) {
             error_log($e->getMessage());
-            $_SESSION['mensaje_error'] = "No se pudo marcar como Atendida: " . $e->getMessage();
+            $_SESSION['mensaje_error'] = "No se pudo marcar como Atendida: " . ErroresBD::mensaje($e);
         }
 
         header("Location: index.php?route=citas");
@@ -335,14 +350,14 @@ class CitaController {
                 && (!$esMedico || $idMedico > 0)
                 && $this->model->marcarInasistencia($id, $idMedico);
             if ($ok) {
-                $_SESSION['mensaje_exito'] = "La cita se marcó como Inasistencia.";
+                $_SESSION['mensaje_exito'] = "La cita se marcó como «No asistió».";
             } else {
                 $_SESSION['mensaje_error'] = "No se pudo marcar la inasistencia: la cita no existe, "
                     . "ya cambió de estado, no es de su agenda o su hora aún no ha comenzado.";
             }
         } catch (Throwable $e) {
             error_log($e->getMessage());
-            $_SESSION['mensaje_error'] = "No se pudo marcar la inasistencia: " . $e->getMessage();
+            $_SESSION['mensaje_error'] = "No se pudo marcar la inasistencia: " . ErroresBD::mensaje($e);
         }
 
         header("Location: index.php?route=citas");
@@ -353,7 +368,7 @@ class CitaController {
     // CANCELAR (admin, recepcionista y el paciente solo de la suya)
     // ----------------------------------------------------------------
     public function cancelar() {
-        Permisos::exigir('citas.cancelar');
+        Permisos::exigir(['citas.gestionar', 'citas.reservar']);
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             header("Location: index.php?route=citas");
             exit;
@@ -393,11 +408,11 @@ class CitaController {
                     . "para volver a reservarse.";
                 break;
             case 'inasistencia':
-                $_SESSION['mensaje_exito'] = "Ya pasó la hora de la cita y seguía Programada: "
-                    . "quedó registrada como Inasistencia y ya no se puede cancelar.";
+                $_SESSION['mensaje_exito'] = "Ya pasó la hora de la cita y seguía Pendiente: "
+                    . "quedó registrada como «No asistió» y ya no se puede cancelar.";
                 break;
             case 'estado':
-                $_SESSION['mensaje_error'] = "Solo se pueden cancelar citas en estado Programada o Confirmada.";
+                $_SESSION['mensaje_error'] = "Solo se pueden cancelar citas en estado Pendiente o Confirmada.";
                 break;
             case 'pasada':
                 $_SESSION['mensaje_error'] = "Ya pasó la fecha y hora de atención: la cita ya no se puede cancelar.";
